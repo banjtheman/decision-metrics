@@ -7,17 +7,18 @@ application actually applied the action.
 Python 3.11+. The core uses only the standard library. OpenTelemetry is optional.
 The library has its own provider contract and no Vibecheck dependency.
 
-## Try it offline
+## Install and try it offline
 
 With your Python 3.11+ environment active:
 
 ```bash
-git clone https://github.com/banjtheman/decision-metrics.git
-cd decision-metrics
-python -m pip install -e .
+python -m pip install decision-metrics
 decision-metrics demo --output output/demo.jsonl
 decision-metrics summary output/demo.jsonl
 ```
+
+For OpenTelemetry support, install `decision-metrics[otel]`. Version 0.1.0 is an
+alpha release; live provider compatibility and game performance need smoke tests.
 
 The demo is synthetic and makes no model or game calls. Output files are created
 exclusively: use a fresh name for each run.
@@ -61,8 +62,11 @@ and `unknown` for delivery without a reliable acknowledgement.
 
 ## Providers
 
-[examples/providers.toml](examples/providers.toml) contains separate entries for
+[examples/providers.toml](https://github.com/banjtheman/decision-metrics/blob/main/examples/providers.toml) contains separate entries for
 Jev, Clef, Clef-flash, Perplexity, Strands local/remote, Kev, and meraGPT.
+Download that file to `examples/providers.toml` before using the examples below,
+or clone the repository to get all sample files. They are not installed with the
+library.
 
 | Transport | Configuration and credential environment |
 | --- | --- |
@@ -92,7 +96,7 @@ need smoke tests. OpenAI Decisions is pending a verified account/API contract.
 ## Freeze inputs and replay them
 
 A packet is one JSON object per line with `state`, ordered `options`,
-`instructions`, and optional `phase` and `case_id`. The sample cases are synthetic.
+`instructions`, and optional `phase` and `case_id`. The [sample cases](https://github.com/banjtheman/decision-metrics/blob/main/examples/packets.jsonl) are synthetic.
 
 ```bash
 decision-metrics replay examples/packets.jsonl \
@@ -152,7 +156,7 @@ Install the `otel` extra and wrap the local sink after your application configur
 its OpenTelemetry SDK providers/exporters:
 
 ```bash
-python -m pip install -e '.[otel]'
+python -m pip install 'decision-metrics[otel]'
 ```
 
 ```python
@@ -204,8 +208,14 @@ No aggregate accuracy score is inferred from the model's own selections.
 ## Development
 
 ```bash
+git clone https://github.com/banjtheman/decision-metrics.git
+cd decision-metrics
+python -m pip install -e '.[otel]' opentelemetry-sdk
 python -m unittest discover -s tests -v
 ```
 
 The OpenTelemetry tests require `opentelemetry-sdk`; the core tests do not. Tests
 make no vendor calls. The project is MIT licensed.
+
+See [publishing instructions](https://github.com/banjtheman/decision-metrics/blob/main/docs/publishing.md)
+for release checks and PyPI Trusted Publishing setup.
