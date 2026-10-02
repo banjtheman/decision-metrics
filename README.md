@@ -1,11 +1,22 @@
 # DecisionMetrics
 
-Standalone telemetry and replay for models that choose among supplied actions.
-Record what the model chose, how long it took, what it cost, and whether the
-application actually applied the action.
+DecisionMetrics is a Python library for recording traces and metrics from
+decision models such as Jev, Cloudflare Clef, Perplexity Decisions, and Strands
+Decider.
+
+A decision model chooses from a set of options supplied by your application.
+Those options might be support queues, agent tools, or game movements.
+DecisionMetrics records the inputs, available options, selected choice, and
+probabilities when the model provides them. It measures response latency, token
+usage, estimated API cost, and deadline misses, then links each decision to the
+action your application applied, rejected, or skipped.
+
+Use these records to debug an application, compare models and local or hosted
+deployments, or replay the same inputs across providers. Save decision traces to
+JSONL and export spans and metrics through your application's OpenTelemetry
+setup.
 
 Python 3.11+. The core uses only the standard library. OpenTelemetry is optional.
-The library has its own provider contract and no Vibecheck dependency.
 
 ## Install and try it offline
 
@@ -17,13 +28,50 @@ decision-metrics demo --output output/demo.jsonl
 decision-metrics summary output/demo.jsonl
 ```
 
-For OpenTelemetry support, install `decision-metrics[otel]`. Version 0.1.0 is an
-alpha release; live provider compatibility and game performance need smoke tests.
+For OpenTelemetry support, install `decision-metrics[otel]`. This is an alpha
+release.
 
 The demo is synthetic and makes no model or game calls. Output files are created
 exclusively: use a fresh name for each run.
 
+## Application examples
+
+| Application | Model decision | Action recorded |
+| --- | --- | --- |
+| [Support-ticket routing](https://github.com/banjtheman/decision-metrics/blob/main/examples/support_routing.py) | Choose billing, technical support, or account access | Assign the ticket to an in-memory queue |
+| [Agent tool selection](https://github.com/banjtheman/decision-metrics/blob/main/examples/agent_tools.py) | Choose documentation search, a status check, or a follow-up question | Execute a local example tool and record its result |
+| Game controller | Choose from available movements or upgrades | Record whether the game accepted the action |
+
+Clone the repository to run the application examples:
+
+```bash
+git clone https://github.com/banjtheman/decision-metrics.git
+cd decision-metrics
+python examples/support_routing.py --output output/support-demo.jsonl
+python examples/agent_tools.py --output output/tools-demo.jsonl
+decision-metrics summary output/support-demo.jsonl output/tools-demo.jsonl
+```
+
+Both scripts use synthetic inputs and deterministic offline rules by default.
+To measure a decision model instead, set its credentials and select a configured
+backend. For example, with `JEV_KEY` set:
+
+```bash
+python examples/support_routing.py --backend jev --output output/support-jev.jsonl
+python examples/agent_tools.py --backend jev --output output/tools-jev.jsonl
+```
+
+The actions stay within the local examples. The journals record the selected
+model's responses, timings, available token usage, and estimated API cost.
+See the [examples guide](https://github.com/banjtheman/decision-metrics/blob/main/examples/README.md)
+for configuration and recorded fields.
+
 ## Record a decision and its action
+
+This example records a game controller's movement decision and whether the game
+accepted it. Download the [sample provider configuration](https://github.com/banjtheman/decision-metrics/blob/main/examples/providers.toml)
+to `examples/providers.toml` and start a local Strands decision server before
+running it. The same recording pattern applies to other applications and models.
 
 ```python
 from decision_metrics import ChoiceRequest, Harness, JsonlSink
@@ -55,9 +103,9 @@ actual `time.monotonic()` timestamp as `observed_at` when it predates the call.
 Action timestamps measure when the application records the result, which can be
 after a bridge acknowledgement; they do not reveal the exact simulation tick.
 
-The game owns legal action generation, execution, freshness, resets, and scoring.
-DecisionMetrics records those facts without executing an action or retrying a
-stale model request. Action statuses are `applied`, `rejected`, `expired`, `skipped`,
+Your application supplies the available actions and executes the selected one.
+Record the execution result separately so the trace shows whether the decision
+led to an action. Action statuses are `applied`, `rejected`, `expired`, `skipped`,
 and `unknown` for delivery without a reliable acknowledgement.
 
 ## Providers
@@ -90,8 +138,7 @@ device, and strict-window fields describe the intended server configuration;
 they are not a runtime attestation. [Strands serving instructions](https://github.com/strands-labs/strands-decider).
 
 The HTTP transports are implemented and tested against fixtures and a local HTTP
-server. Live vendor compatibility, account access, and game performance still
-need smoke tests. OpenAI Decisions is pending a verified account/API contract.
+server. Live vendor compatibility has not yet been validated.
 
 ## Freeze inputs and replay them
 

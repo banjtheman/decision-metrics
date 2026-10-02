@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "decision-metrics"
-version = "0.1.0"
-description = "Standalone telemetry and replay for decision models"
+version = "0.1.1"
+description = "Traces, metrics, and replay for decision models"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []

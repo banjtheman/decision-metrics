@@ -7,7 +7,7 @@ import json
 import math
 from typing import Any, Protocol
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 SCHEMA_VERSION = 1
 
 
