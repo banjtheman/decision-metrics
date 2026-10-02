@@ -1,0 +1,3 @@
+{"case_id":"synthetic-combat","phase":"combat","state":{"game":"synthetic","health":4,"enemy":"east"},"options":{"west":{"threat_clearance":150},"east":{"threat_clearance":10},"stay":{"threat_clearance":30}},"instructions":"Choose a movement to survive. Larger threat clearance is safer."}
+{"case_id":"synthetic-shop","phase":"shop","state":{"game":"synthetic","gold":25,"weapons":["SMG"]},"options":{"buy_damage":{"cost":20,"effect":"Increase compatible weapon damage"},"leave":{"cost":0,"effect":"Start the next wave"}},"instructions":"Improve the existing build when the purchase is useful and affordable."}
+{"case_id":"synthetic-forced","phase":"upgrade","state":{"game":"synthetic"},"options":{"continue":{"kind":"continue"}},"instructions":"Choose the only legal action."}

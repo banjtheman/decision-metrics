@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decision-metrics"
+version = "0.1.0"
+description = "Standalone telemetry and replay for decision models"
+requires-python = ">=3.11"
+dependencies = []
+license = "MIT"
+
+[project.optional-dependencies]
+otel = ["opentelemetry-api>=1.20"]
+
+[project.scripts]
+decision-metrics = "decision_metrics.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

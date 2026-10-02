@@ -1,0 +1,61 @@
+# Credentials are environment variable names, never credential values.
+# Defaults/prices checked 2026-10-02. Recheck prices and account quotas before runs.
+
+[backends.jev]
+provider = "jev"
+model = "jev-1.13.0"
+deployment = "typesafe-hosted"
+
+[backends.clef-flash]
+provider = "clef-flash"
+deployment = "cloudflare-workers-ai"
+# Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AUTH_TOKEN in the environment.
+
+[backends.clef]
+provider = "clef"
+deployment = "cloudflare-workers-ai"
+
+[backends.perplexity]
+provider = "perplexity"
+deployment = "perplexity-hosted"
+
+[backends.strands-local]
+provider = "strands"
+endpoint = "http://127.0.0.1:8000/v1/systemone"
+deployment = "local-mps"
+input_per_million_usd = 0
+output_per_million_usd = 0
+price_source = "Local API charge only; hardware, energy, and compute cost excluded"
+
+[backends.strands-local.details]
+checkpoint = "StrandsAgents/strands-decider-2B-hobson-v19"
+checkpoint_revision = "bb282d786bc251fd4e3068de3ada9ddbb38127cd"
+hardware = "Apple M3 Max; 64 GiB unified memory"
+device = "mps"
+strict_window = true
+context_tokens = 4096
+# Metadata describes the intended server; verify it against the actual running process.
+
+[backends.strands-remote]
+provider = "strands"
+endpoint = "https://YOUR-SERVER.example/v1/systemone"
+deployment = "remote-server"
+# Replace endpoint and fill hardware/runtime/price data before use. No server is provisioned.
+
+[backends.strands-remote.details]
+checkpoint = "StrandsAgents/strands-decider-2B-hobson-v19"
+checkpoint_revision = "bb282d786bc251fd4e3068de3ada9ddbb38127cd"
+hardware = "UNCONFIGURED"
+strict_window = true
+
+[backends.kev-local]
+provider = "kev"
+deployment = "local-mlx"
+input_per_million_usd = 0
+price_source = "Local API charge only; compute excluded"
+
+[backends.meragpt]
+provider = "meragpt"
+deployment = "meragpt-hosted"
+# Only 2–10 options: larger Brotato shop sets are rejected, never silently clipped.
+
