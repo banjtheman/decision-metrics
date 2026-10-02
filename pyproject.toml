@@ -13,6 +13,11 @@ license = "MIT"
 [project.optional-dependencies]
 otel = ["opentelemetry-api>=1.20"]
 
+[project.urls]
+Repository = "https://github.com/banjtheman/decision-metrics"
+Documentation = "https://github.com/banjtheman/decision-metrics#readme"
+Issues = "https://github.com/banjtheman/decision-metrics/issues"
+
 [project.scripts]
 decision-metrics = "decision_metrics.__main__:main"
 

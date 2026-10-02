@@ -12,6 +12,8 @@ The library has its own provider contract and no Vibecheck dependency.
 With your Python 3.11+ environment active:
 
 ```bash
+git clone https://github.com/banjtheman/decision-metrics.git
+cd decision-metrics
 python -m pip install -e .
 decision-metrics demo --output output/demo.jsonl
 decision-metrics summary output/demo.jsonl
