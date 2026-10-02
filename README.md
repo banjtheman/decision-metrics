@@ -111,6 +111,10 @@ A second experiment with a shared request cadence can help isolate choice
 quality from deployment speed. Record cadence, hardware, precision, checkpoint,
 and server settings in run metadata.
 
+For full episodes, set call and billing limits high enough to finish. An identical
+call ceiling can stop a faster controller earlier; budget stops belong in a
+separate outcome category from game deaths.
+
 ## Bring another backend
 
 Implement `info`, `choose(request) -> DecisionResult`, and `close()`:
