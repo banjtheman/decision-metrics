@@ -65,6 +65,22 @@ class TransportTests(unittest.TestCase):
             self.assertEqual(captured[0]["authorization"], "Bearer TEST_ONLY_SECRET")
             self.assertEqual(captured[0]["path"], "/v1/systemone")
             self.assertEqual(captured[0]["body"]["questions"]["action"]["instructions"], "Survive.")
+            self.assertEqual(captured[0]["body"]["questions"]["action"]["criteria"], {"left": "{}", "right": "{}"})
+
+    def test_structured_descriptions_are_text_without_losing_values_or_candidate_order(self):
+        response = {"answers": {"action": {"type": "choice", "choice": "north",
+                                            "probabilities": {"east": .2, "north": .8}}}}
+        with server([(200, response)]) as (endpoint, captured):
+            backend = ChoiceHTTPBackend(BackendInfo("test", None, "local"), transport=JsonTransport(endpoint))
+            try:
+                backend.choose(ChoiceRequest({}, {"east": {"danger": True, "distance": 12},
+                                                  "north": "clear path"}, "Survive."))
+            finally:
+                backend.close()
+            criteria = captured[0]["body"]["questions"]["action"]["criteria"]
+            self.assertEqual(list(criteria), ["east", "north"])
+            self.assertEqual(json.loads(criteria["east"]), {"danger": True, "distance": 12})
+            self.assertEqual(criteria["north"], "clear path")
 
     def test_redirect_is_not_followed_or_retried(self):
         with server([(302, {"debug": "TEST_ONLY_SECRET"})]) as (endpoint, captured):

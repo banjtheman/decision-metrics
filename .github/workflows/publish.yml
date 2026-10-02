@@ -48,6 +48,8 @@ jobs:
       - run: decision-metrics demo --output output/release-demo.jsonl
       - run: python examples/support_routing.py --output output/release-support.jsonl
       - run: python examples/agent_tools.py --output output/release-tools.jsonl
+      - run: decision-metrics export-training output/release-demo.jsonl --output output/release-review
+      - run: decision-metrics export-training output/release-demo.jsonl --teacher-backend demo --format strands --output output/release-strands
       - uses: actions/upload-artifact@v7
         with:
           name: distributions

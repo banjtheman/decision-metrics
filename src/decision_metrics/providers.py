@@ -4,6 +4,7 @@ No SDK dependency, redirects, background calls, or automatic retries.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from http.client import HTTPConnection, HTTPSConnection, HTTPException
 import json
 import math
@@ -15,6 +16,7 @@ from urllib.parse import urlsplit
 
 from .types import (BackendInfo, ChoiceRequest, DecisionError, DecisionResult, Pricing,
                     answer_diagnostics, parse_usage, validate_result)
+from .rendering import OPTION_RENDERING, render_options
 
 _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 PROVIDERS = {
@@ -108,7 +110,7 @@ class ChoiceHTTPBackend:
                  envelope: str = "direct", max_options: int = 255):
         if envelope not in {"direct", "cloudflare"}:
             raise ValueError("Unknown response envelope")
-        self.info = info
+        self.info = replace(info, details={**info.details, "option_rendering": OPTION_RENDERING})
         self._transport = transport
         self._envelope = envelope
         self._max_options = max_options
@@ -117,7 +119,8 @@ class ChoiceHTTPBackend:
         if not 2 <= len(request.options) <= self._max_options:
             raise DecisionError("unsupported_option_count", kind="capability")
         payload = {"state": request.state, "questions": {"action": {
-            "type": "choice", "instructions": request.instructions, "criteria": request.options}}}
+            "type": "choice", "instructions": request.instructions,
+            "criteria": render_options(request.options)}}}
         if self.info.requested_model is not None:
             payload["model"] = self.info.requested_model
         document = self._transport.post(payload)

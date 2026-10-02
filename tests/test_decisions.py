@@ -127,7 +127,7 @@ class ChoiceTests(unittest.TestCase):
         backend._transport = transport
         self.assertEqual(backend.choose(request()).choice, "a")
         self.assertEqual(transport.payload["model"], "clef-flash")
-        self.assertEqual(transport.payload["questions"]["action"]["criteria"]["a"], {"distance": 20})
+        self.assertEqual(json.loads(transport.payload["questions"]["action"]["criteria"]["a"]), {"distance": 20})
         self.assertIn("/@cf/cloudflare/clef-flash", backend.info.endpoint)
         self.assertNotIn("TEST_ONLY_SECRET", json.dumps(backend.info.to_dict()))
 

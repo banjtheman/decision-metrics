@@ -24,7 +24,8 @@ does not reserve the name. See [PyPI's setup guide](https://docs.pypi.org/truste
 
 ## Release a version
 
-1. Update `pyproject.toml` and document the changes in the GitHub release notes.
+1. Update `pyproject.toml` and `src/decision_metrics/types.py` to the same version,
+   and document changes in `CHANGELOG.md` or the release notes.
 2. Push the changes and wait for the tests workflow to pass. CI builds both
    distributions and runs the tests against the installed wheel on Python
    3.11–3.13.

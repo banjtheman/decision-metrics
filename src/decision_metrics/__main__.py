@@ -8,6 +8,8 @@ import sys
 from . import BackendInfo, ChoiceRequest, DecisionError, DecisionResult, Harness, JsonlSink
 from .providers import PROVIDERS, load_backend
 from .report import read_events, summarize
+from .training import export_training, read_annotations
+from .exporters import EXPORTERS, load_exporter
 
 
 class DemoBackend:
@@ -41,6 +43,18 @@ def main(argv=None):
     demo.add_argument("--output", type=Path, default=Path("output/demo.jsonl"))
     summary = commands.add_parser("summary", help="Summarize one or more event files")
     summary.add_argument("events", type=Path, nargs="+")
+    training = commands.add_parser("export-training", help="Create a review queue or labeled training dataset")
+    training.add_argument("events", type=Path, nargs="+")
+    training.add_argument("--output", type=Path, required=True, help="New dataset directory")
+    training.add_argument("--labels", type=Path, help="Edited review JSONL or explicit annotation JSONL")
+    training.add_argument("--teacher-backend", help="Explicitly imitate recorded choices from this named backend")
+    training.add_argument("--splits", type=Path, help="JSON map of episode group IDs to train/validation/test")
+    training.add_argument("--require-applied", action="store_true", help="Exclude offline replay and other skipped actions")
+    training.add_argument("--allow-self-labels", action="store_true")
+    formats = training.add_mutually_exclusive_group()
+    formats.add_argument("--format", choices=sorted(EXPORTERS), default=None,
+                         help="Dataset format (default: decision-jsonl)")
+    formats.add_argument("--exporter", help="Custom trusted Python serializer, module:attribute")
     replay = commands.add_parser("replay", help="Send frozen packets sequentially to one backend")
     replay.add_argument("packets", type=Path)
     replay.add_argument("--config", type=Path, required=True)
@@ -58,6 +72,15 @@ def main(argv=None):
             return 0
         if args.command == "summary":
             print(json.dumps(summarize(event for path in args.events for event in read_events(path)), indent=2))
+            return 0
+        if args.command == "export-training":
+            splits = json.loads(args.splits.read_text(encoding="utf-8")) if args.splits else None
+            result = export_training((event for path in args.events for event in read_events(path)), args.output,
+                annotations=read_annotations(args.labels) if args.labels else (),
+                teacher_backend=args.teacher_backend, splits=splits,
+                require_applied=args.require_applied, allow_self_labels=args.allow_self_labels,
+                exporter=load_exporter(args.exporter or args.format or "decision-jsonl"))
+            print(json.dumps(result, indent=2))
             return 0
         backend = DemoBackend() if args.command == "demo" else load_backend(args.config, args.backend)
         failures = 0

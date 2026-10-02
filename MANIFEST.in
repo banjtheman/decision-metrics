@@ -1,2 +1,3 @@
 recursive-include examples *.py *.toml *.jsonl *.md
 recursive-include docs *.md
+include CHANGELOG.md

@@ -12,9 +12,9 @@ usage, estimated API cost, and deadline misses, then links each decision to the
 action your application applied, rejected, or skipped.
 
 Use these records to debug an application, compare models and local or hosted
-deployments, or replay the same inputs across providers. Save decision traces to
-JSONL and export spans and metrics through your application's OpenTelemetry
-setup.
+deployments, replay the same inputs across providers, or prepare reviewed training
+datasets. Save decision traces to JSONL and export spans and metrics through your
+application's OpenTelemetry setup.
 
 Python 3.11+. The core uses only the standard library. OpenTelemetry is optional.
 
@@ -137,8 +137,14 @@ default truncation would change the benchmark input. The example's checkpoint,
 device, and strict-window fields describe the intended server configuration;
 they are not a runtime attestation. [Strands serving instructions](https://github.com/strands-labs/strands-decider).
 
-The HTTP transports are implemented and tested against fixtures and a local HTTP
-server. Live vendor compatibility has not yet been validated.
+Option descriptions supplied as objects, arrays, numbers, booleans, or null are
+encoded as canonical JSON text for HTTP adapters; existing text stays unchanged.
+Option IDs and presentation order are preserved. The journal keeps the original
+structured request and records the rendering version in backend metadata.
+
+The transports are tested against fixtures and a local HTTP server. Jev 1.13 and
+the published Strands v19 checkpoint have also passed a 16-case saved-game replay.
+Other live vendor integrations remain unverified.
 
 ## Freeze inputs and replay them
 
@@ -167,6 +173,32 @@ and server settings in run metadata.
 For full episodes, set call and billing limits high enough to finish. An identical
 call ceiling can stop a faster controller earlier; budget stops belong in a
 separate outcome category from game deaths.
+
+## Export training data
+
+Turn journals into a review queue, then supply human or teacher labels. The default
+dataset preserves the original structured inputs, ordered candidates, and label
+provenance:
+
+```bash
+decision-metrics export-training output/run-01.jsonl --output output/review-01
+# Edit the label fields in output/review-01/review.jsonl.
+decision-metrics export-training output/run-01.jsonl \
+  --labels output/review-01/review.jsonl --output output/labeled-01
+```
+
+No labels are inferred from a model's confidence, a successful action, or an
+episode outcome. To deliberately imitate another model, pass
+`--teacher-backend jev`; those labels remain marked as teacher predictions.
+Self-labels require an explicit opt-in. Stale, rejected, failed, or unacknowledged
+decisions are excluded from training and retained in the review file with reasons.
+
+Choose `--format strands` for Strands' native Choice examples, or
+`--exporter your_package:YourExporter` for another runtime. Exporters control the
+row format; shared code handles labels, outcome joins, whole-episode splits,
+duplicate-input leakage checks, and file hashes. See the
+[training-data guide](https://github.com/banjtheman/decision-metrics/blob/main/docs/training-data.md)
+for annotations, held-out episodes, and the Python extension interface.
 
 ## Bring another backend
 

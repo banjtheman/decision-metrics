@@ -42,6 +42,20 @@ class CliTests(unittest.TestCase):
             self.assertEqual(captured[0]["body"]["questions"]["action"]["instructions"], "CURRENT_FROZEN_PROMPT")
             self.assertEqual([e["status"] for e in events if e["event"] == "action"], ["skipped", "skipped"])
 
+    def test_export_training_defaults_to_generic_and_supports_native_strands(self):
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            trace = root / "trace.jsonl"
+            self.assertEqual(main(["demo", "--output", str(trace)]), 0)
+            self.assertEqual(main(["export-training", str(trace), "--output", str(root / "generic")]), 0)
+            manifest = json.loads((root / "generic" / "manifest.json").read_text())
+            self.assertEqual(manifest["format"], "decision-jsonl-v1")
+            self.assertEqual(manifest["examples"]["train"], 0)
+            self.assertEqual(main(["export-training", str(trace), "--output", str(root / "strands"),
+                                   "--format", "strands", "--teacher-backend", "demo"]), 0)
+            row = json.loads((root / "strands" / "train.jsonl").read_text())
+            self.assertEqual((row["kind"], row["label"]), ("choice", 0))
+
 
 if __name__ == "__main__":
     unittest.main()

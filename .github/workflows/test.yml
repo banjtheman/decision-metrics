@@ -22,3 +22,5 @@ jobs:
       - run: decision-metrics demo --output output/ci-demo.jsonl
       - run: python examples/support_routing.py --output output/ci-support.jsonl
       - run: python examples/agent_tools.py --output output/ci-tools.jsonl
+      - run: decision-metrics export-training output/ci-demo.jsonl --output output/ci-review
+      - run: decision-metrics export-training output/ci-demo.jsonl --teacher-backend demo --format strands --output output/ci-strands
