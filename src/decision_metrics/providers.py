@@ -1,4 +1,4 @@
-"""Documented System One, Workers AI, and Perplexity Choice transports.
+"""Documented System One, Workers AI, Perplexity, OpenAI and OpenRouter transports.
 
 No SDK dependency, redirects, background calls, or automatic retries.
 """
@@ -31,6 +31,13 @@ PROVIDERS = {
                    "endpoint": "https://api.perplexity.ai/v1/decisions",
                    "key_env": "PERPLEXITY_API_KEY", "price": .04,
                    "source": "https://docs.perplexity.ai/docs/decisions/quickstart"},
+    "openai-decisions": {"model": "gpt-6-luna",
+                         "endpoint": "https://api.openai.com/v1/decisions",
+                         "key_env": "OPENAI_API_KEY", "price": .10,
+                         "source": "https://developers.openai.com/api/docs/guides/decisions",
+                         "price_checked_at": "2026-10-06"},
+    "openrouter-decisions": {"endpoint": "https://openrouter.ai/api/alpha/decisions",
+                             "key_env": "OPENROUTER_API_KEY"},
     "strands": {"model": "strands-decider-2B-hobson-v19",
                 "endpoint": "http://127.0.0.1:8000/v1/systemone"},
     "kev": {"model": "kev-latest", "endpoint": "http://127.0.0.1:8008/v1/systemone"},
@@ -118,20 +125,26 @@ class ChoiceHTTPBackend:
     def choose(self, request: ChoiceRequest) -> DecisionResult:
         if not 2 <= len(request.options) <= self._max_options:
             raise DecisionError("unsupported_option_count", kind="capability")
+        document = self._transport.post(self._payload(request))
+        if self._envelope == "cloudflare":
+            if document.get("success") is not True or not isinstance(document.get("result"), dict):
+                raise DecisionError("cloudflare_envelope", kind="validation")
+            document = document["result"]
+        answers = document.get("answers")
+        answer = answers.get("action") if isinstance(answers, dict) else None
+        return self._parse_answer(document, answer, request)
+
+    def _payload(self, request: ChoiceRequest) -> dict:
         payload = {"state": request.state, "questions": {"action": {
             "type": "choice", "instructions": request.instructions,
             "criteria": render_options(request.options)}}}
         if self.info.requested_model is not None:
             payload["model"] = self.info.requested_model
-        document = self._transport.post(payload)
-        if self._envelope == "cloudflare":
-            if document.get("success") is not True or not isinstance(document.get("result"), dict):
-                raise DecisionError("cloudflare_envelope", kind="validation")
-            document = document["result"]
+        return payload
+
+    def _parse_answer(self, document: dict, answer, request: ChoiceRequest) -> DecisionResult:
         usage = parse_usage(document.get("usage"))
         model = _safe_model(document.get("model"))
-        answers = document.get("answers")
-        answer = answers.get("action") if isinstance(answers, dict) else None
 
         def fail(code):
             raise DecisionError(code, kind="validation", usage=usage, model=model,
@@ -154,6 +167,69 @@ class ChoiceHTTPBackend:
 
     def close(self):
         self._transport.close()
+
+
+class OpenAIDecisionsBackend(ChoiceHTTPBackend):
+    """Map a Choice request to OpenAI's named-question and typed-value arrays."""
+
+    def __init__(self, info: BackendInfo, *, transport: JsonTransport):
+        super().__init__(info, transport=transport)
+        self.info = replace(self.info, details={**self.info.details,
+            "api": "openai-decisions", "question_name": "action",
+            "state_rendering": "text-or-compact-json-v1"})
+
+    def choose(self, request: ChoiceRequest) -> DecisionResult:
+        if not 2 <= len(request.options) <= self._max_options:
+            raise DecisionError("unsupported_option_count", kind="capability")
+        shared_input = request.state if isinstance(request.state, str) else json.dumps(
+            request.state, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        payload = {"model": self.info.requested_model, "input": shared_input,
+            "questions": [{"type": "choice", "name": "action",
+                "instructions": request.instructions,
+                "choices": [{"value": key, "description": description}
+                            for key, description in render_options(request.options).items()]}]}
+        document = self._transport.post(payload)
+        usage = parse_usage(document.get("usage"))
+        model = _safe_model(document.get("model"))
+        answers = document.get("answers")
+        answer = answers[0] if isinstance(answers, list) and len(answers) == 1 else None
+
+        def fail(code, *, kind="validation"):
+            raise DecisionError(code, kind=kind, usage=usage, model=model,
+                                diagnostics=answer_diagnostics(answer, request))
+
+        if not isinstance(answer, dict) or answer.get("name") != "action":
+            fail("missing_choice_answer")
+        if answer.get("type") == "refusal":
+            fail("model_refusal", kind="provider")
+        if answer.get("type") != "choice":
+            fail("missing_choice_answer")
+        entries = answer.get("probabilities")
+        if not isinstance(entries, list):
+            fail("missing_probabilities")
+        distribution = {}
+        for entry in entries:
+            if (not isinstance(entry, dict) or not isinstance(entry.get("value"), str)
+                    or entry["value"] not in request.options):
+                fail("option_mismatch")
+            key = entry["value"]
+            if key in distribution:
+                fail("duplicate_probability_value")
+            distribution[key] = entry.get("probability")
+        normalized = {**answer, "probabilities": distribution}
+        return self._parse_answer(document, normalized, request)
+
+
+class OpenRouterDecisionsBackend(ChoiceHTTPBackend):
+    """Native Decisions API for any configured model, without provider fallbacks."""
+
+    def __init__(self, info: BackendInfo, *, transport: JsonTransport):
+        super().__init__(info, transport=transport)
+        self.info = replace(self.info, details={**self.info.details,
+            "api": "openrouter-decisions", "allow_provider_fallbacks": False})
+
+    def _payload(self, request: ChoiceRequest) -> dict:
+        return {**super()._payload(request), "provider": {"allow_fallbacks": False}}
 
 
 def make_backend(settings: dict, *, name: str | None = None,
@@ -184,16 +260,24 @@ def make_backend(settings: dict, *, name: str | None = None,
     model = settings.get("model", defaults.get("model"))
     if model is not None and _safe_model(model) is None:
         raise ValueError("Model must be a valid nonempty identifier")
+    if provider == "openrouter-decisions" and model is None:
+        raise ValueError("OpenRouter Decisions requires an explicit model")
     price_value = settings.get("input_per_million_usd", defaults.get("price"))
     price = None if price_value is None else Pricing(
         price_value, settings.get("output_per_million_usd", 0.0),
         settings.get("price_source", defaults.get("source", "user configuration")),
-        settings.get("price_checked_at", "2026-10-02"))
+        settings.get("price_checked_at", defaults.get("price_checked_at", "2026-10-02")))
     transport = JsonTransport(endpoint, api_key=api_key, timeout=settings.get("timeout", 2.0))
     info = BackendInfo(name or settings.get("name", provider), model,
                        settings.get("deployment", provider), endpoint, price,
                        settings.get("details", {}),
                        settings.get("probability_decimals", defaults.get("probability_decimals")))
+    if provider == "openai-decisions":
+        if model is None:
+            raise ValueError("OpenAI Decisions requires a model")
+        return OpenAIDecisionsBackend(info, transport=transport)
+    if provider == "openrouter-decisions":
+        return OpenRouterDecisionsBackend(info, transport=transport)
     return ChoiceHTTPBackend(info, transport=transport,
                              envelope="cloudflare" if provider in {"clef", "clef-flash"} else "direct",
                              max_options=defaults.get("max_options", 255))

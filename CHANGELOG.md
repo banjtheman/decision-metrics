@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Add the native OpenRouter Decisions transport with configurable model IDs,
+  credential environment variables, and explicit prices. Disable provider
+  fallbacks and preserve the original choices, distributions and token usage.
+- Add Microsoft Decision-1 configuration and validate 16 frozen Brotato inputs
+  through OpenRouter; these probes are not optimal-action labels.
+- Add the native OpenAI Decisions transport, including ordered typed choices,
+  refusal handling, strict distribution validation and its endpoint-specific
+  input-only rate. Both transports use the standard library without a new SDK.
+
 ## 0.2.0
 
 - Add model-neutral training-data export with explicit labels and complete

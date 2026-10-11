@@ -19,6 +19,13 @@ deployment = "cloudflare-workers-ai"
 provider = "perplexity"
 deployment = "perplexity-hosted"
 
+[backends.openai-decisions]
+provider = "openai-decisions"
+model = "gpt-6-luna"
+deployment = "openai-hosted"
+# Set OPENAI_API_KEY. Decisions uses its own input-only rate, checked 2026-10-06.
+# Regional processing premiums / long-context multipliers need a price override.
+
 [backends.strands-local]
 provider = "strands"
 endpoint = "http://127.0.0.1:8000/v1/systemone"
@@ -35,6 +42,16 @@ device = "mps"
 strict_window = true
 context_tokens = 4096
 # Metadata describes the intended server; verify it against the actual running process.
+
+[backends.microsoft-decision-1]
+provider = "openrouter-decisions"
+model = "microsoft/microsoft-decision-1"
+deployment = "openrouter-hosted"
+# Set OPENROUTER_API_KEY; api_key_env can select another environment variable name.
+input_per_million_usd = 0.042
+output_per_million_usd = 0
+price_source = "https://openrouter.ai/microsoft/microsoft-decision-1"
+price_checked_at = "2026-10-11"
 
 [backends.strands-remote]
 provider = "strands"
@@ -58,4 +75,3 @@ price_source = "Local API charge only; compute excluded"
 provider = "meragpt"
 deployment = "meragpt-hosted"
 # Only 2–10 options: larger Brotato shop sets are rejected, never silently clipped.
-

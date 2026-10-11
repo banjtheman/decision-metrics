@@ -1,8 +1,8 @@
 # DecisionMetrics
 
 DecisionMetrics is a Python library for recording traces and metrics from
-decision models such as Jev, Cloudflare Clef, Perplexity Decisions, and Strands
-Decider.
+decision models such as Jev, Cloudflare Clef, Microsoft Decision-1, OpenAI
+Decisions, Perplexity Decisions, and Strands Decider.
 
 A decision model chooses from a set of options supplied by your application.
 Those options might be support queues, agent tools, or game movements.
@@ -111,7 +111,8 @@ and `unknown` for delivery without a reliable acknowledgement.
 ## Providers
 
 [examples/providers.toml](https://github.com/banjtheman/decision-metrics/blob/main/examples/providers.toml) contains separate entries for
-Jev, Clef, Clef-flash, Perplexity, Strands local/remote, Kev, and meraGPT.
+Jev, Clef, Clef-flash, Microsoft Decision-1 via OpenRouter, OpenAI Decisions,
+Perplexity, Strands local/remote, Kev, and meraGPT.
 Download that file to `examples/providers.toml` before using the examples below,
 or clone the repository to get all sample files. They are not installed with the
 library.
@@ -121,6 +122,8 @@ library.
 | Jev System One | `provider = "jev"`; `JEV_KEY` |
 | Cloudflare Workers AI | `provider = "clef"` or `"clef-flash"`; `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AUTH_TOKEN` |
 | Perplexity Decisions | `provider = "perplexity"`; `PERPLEXITY_API_KEY` |
+| OpenAI Decisions | `provider = "openai-decisions"`; `OPENAI_API_KEY`; `gpt-6-luna` |
+| OpenRouter Decisions | `provider = "openrouter-decisions"`; `OPENROUTER_API_KEY`; explicit model ID |
 | Local Strands / Kev | `provider = "strands"` or `"kev"`; local HTTP endpoint |
 | meraGPT System One | `provider = "meragpt"`; `MERAGPT_API_KEY`; 2–10 options |
 | Another compatible server | `provider = "systemone"`; explicit endpoint and model |
@@ -142,9 +145,50 @@ encoded as canonical JSON text for HTTP adapters; existing text stays unchanged.
 Option IDs and presentation order are preserved. The journal keeps the original
 structured request and records the rendering version in backend metadata.
 
-The transports are tested against fixtures and a local HTTP server. Jev 1.13 and
-the published Strands v19 checkpoint have also passed a 16-case saved-game replay.
-Other live vendor integrations remain unverified.
+The transports are tested against fixtures and a local HTTP server. Jev 1.13,
+the published Strands v19 checkpoint and Microsoft Decision-1 have each passed
+16 frozen Brotato inputs. OpenAI Decisions and Microsoft Decision-1 have also
+completed live Brotato episodes. These checks establish integration behavior, not optimal choices or
+comparable model rankings; other live vendor integrations remain unverified.
+
+The OpenAI adapter uses the dedicated `POST /v1/decisions` endpoint. It sends
+structured state as compact JSON text, keeps plain-text state unchanged, and maps
+ordered option IDs/descriptions to one named `choice` question. Returned option
+probabilities map back to the common result format without changing their values.
+Refusals and malformed or incomplete distributions remain errors; they never
+produce a fallback action. This adapter adds no SDK dependency.
+
+The [OpenAI Decisions guide](https://developers.openai.com/api/docs/guides/decisions)
+documents public beta access and an input-only rate of $0.10 per million tokens
+for this endpoint, checked 2026-10-06. Regional processing premiums and long-context
+multipliers require configuration overrides. Account access must be checked with
+a live request before starting a benchmark.
+
+The OpenRouter adapter uses `POST https://openrouter.ai/api/alpha/decisions` with
+native `state` and named `questions`. Configure any supported decision model by
+its explicit ID; the transport does not assume its price. The Microsoft example
+uses `microsoft/microsoft-decision-1`, with the [listed input rate](https://openrouter.ai/microsoft/microsoft-decision-1)
+of $0.042 per million tokens and free output, checked 2026-10-11. Set
+`api_key_env = "OPEN_ROUTER_KEY"` if that is your environment variable name.
+Provider fallbacks are disabled, responses pass the common Choice validation,
+and no additional SDK is required. Microsoft describes the model weights as
+continuously updated, so preserve the returned model label and test date when
+comparing runs. [OpenRouter Decisions API reference](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request).
+
+The OpenAI and OpenRouter adapters are currently available in this source
+checkout; the latest PyPI release is 0.2.0. After cloning, install the checkout
+before trying Microsoft Decision-1:
+
+```bash
+python -m pip install -e .
+python examples/agent_tools.py --backend microsoft-decision-1 \
+  --output output/tools-microsoft-01.jsonl
+```
+
+Set `OPENROUTER_API_KEY` in your environment, or configure `api_key_env` as above.
+The example applies three tool choices to local fixtures and records their
+inputs, outputs and action results. HTTP failures, including rate limits, stay
+visible in telemetry; failed requests are never automatically retried.
 
 ## Freeze inputs and replay them
 
