@@ -175,12 +175,12 @@ and no additional SDK is required. Microsoft describes the model weights as
 continuously updated, so preserve the returned model label and test date when
 comparing runs. [OpenRouter Decisions API reference](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request).
 
-The OpenAI and OpenRouter adapters are currently available in this source
-checkout; the latest PyPI release is 0.2.0. After cloning, install the checkout
-before trying Microsoft Decision-1:
+The OpenAI and OpenRouter adapters are included in DecisionMetrics 0.3.0 and
+later. After cloning the repository to get the example scripts, install the
+package and try Microsoft Decision-1:
 
 ```bash
-python -m pip install -e .
+python -m pip install --upgrade 'decision-metrics>=0.3.0'
 python examples/agent_tools.py --backend microsoft-decision-1 \
   --output output/tools-microsoft-01.jsonl
 ```

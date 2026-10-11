@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-11
 
 - Add the native OpenRouter Decisions transport with configurable model IDs,
   credential environment variables, and explicit prices. Disable provider
@@ -10,6 +10,8 @@
 - Add the native OpenAI Decisions transport, including ordered typed choices,
   refusal handling, strict distribution validation and its endpoint-specific
   input-only rate. Both transports use the standard library without a new SDK.
+- Validate both transports in live Brotato episodes and retain the existing
+  model-neutral telemetry and training-data export formats.
 
 ## 0.2.0
 

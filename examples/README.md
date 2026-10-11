@@ -54,8 +54,8 @@ decisions are recorded without replacing them with offline rules.
 Use `--backend` and `--config` to select another entry from
 [providers.toml](providers.toml), including Clef, Perplexity, OpenAI Decisions,
 Microsoft Decision-1 through OpenRouter, or a running local Strands server.
-The new OpenAI and OpenRouter adapters require installing this source checkout
-with `python -m pip install -e .` until a new package release is published.
+The OpenAI and OpenRouter adapters require DecisionMetrics 0.3.0 or later:
+`python -m pip install --upgrade 'decision-metrics>=0.3.0'`.
 Set `--deadline-ms` to match the time budget for your application.
 
 ## Inspect the telemetry
