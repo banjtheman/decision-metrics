@@ -32,7 +32,10 @@ def _summarize(decisions, actions):
     action_counts = Counter(actions[event["decision_id"]]["status"] for event in decisions
                             if event["decision_id"] in actions)
     failures = Counter(event["error"]["code"] for event in evaluations if event["status"] == "error")
-    return {"decisions": len(decisions), "backend_evaluations": len(evaluations), "model_requests": len(attempts),
+    # Journals from before Noul and Score have only Choice decisions.
+    question_types = Counter(event.get("question_type", "choice") for event in decisions)
+    return {"decisions": len(decisions), "question_types": dict(question_types),
+            "backend_evaluations": len(evaluations), "model_requests": len(attempts),
             "forced_decisions": sum(event["source"] == "forced" for event in decisions),
             "valid_responses": sum(event["status"] == "ok" for event in attempts),
             "errors": dict(failures), "actions": dict(action_counts),

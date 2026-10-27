@@ -10,8 +10,12 @@ import time
 from typing import Callable, Protocol
 from uuid import uuid4
 
-from .types import (Backend, ChoiceRequest, DecisionError, DecisionResult, SCHEMA_VERSION,
+from .types import (Backend, ChoiceRequest, DecisionError, DecisionResult, NoulRequest,
+                    NoulResult, REQUEST_TYPES, SCHEMA_VERSION, ScoreRequest, ScoreResult,
                     VERSION, answer_diagnostics, json_copy, validate_result)
+
+# The backend method that answers each question type.
+METHODS = {"choice": "choose", "noul": "noul", "score": "score"}
 
 
 class Sink(Protocol):
@@ -43,7 +47,7 @@ class JsonlSink:
 @dataclass(frozen=True)
 class Decision:
     decision_id: str
-    result: DecisionResult
+    result: DecisionResult | NoulResult | ScoreResult
     latency_ms: float
     source: str
     deadline_missed: bool
@@ -51,10 +55,17 @@ class Decision:
     completed_at: float
     deadline_ms: float | None
     phase: str
+    question_type: str = "choice"
 
     def expired(self, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
         return self.deadline_ms is not None and (now - self.observed_at) * 1000 > self.deadline_ms
+
+
+def _expect(request, kind):
+    if not isinstance(request, kind):
+        raise ValueError(f"Expected a {kind.__name__}")
+    return request
 
 
 class Harness:
@@ -80,10 +91,26 @@ class Harness:
                          "run_elapsed_ms": round((self._clock() - self._origin) * 1000, 3),
                          **fields})
 
-    def choose(self, request: ChoiceRequest, *, phase: str = "decision",
-               observation_id: str | int | None = None, observed_at: float | None = None,
-               deadline_ms: float | None = None) -> Decision:
-        request = ChoiceRequest(**request.to_dict())
+    def choose(self, request: ChoiceRequest, **when) -> Decision:
+        """Pick one option. Keywords as for ask()."""
+        return self.ask(_expect(request, ChoiceRequest), **when)
+
+    def noul(self, request: NoulRequest, **when) -> Decision:
+        """The probability that a yes/no condition holds. Keywords as for ask()."""
+        return self.ask(_expect(request, NoulRequest), **when)
+
+    def score(self, request: ScoreRequest, **when) -> Decision:
+        """The expected level on an ordered rubric. Keywords as for ask()."""
+        return self.ask(_expect(request, ScoreRequest), **when)
+
+    def ask(self, request: ChoiceRequest | NoulRequest | ScoreRequest, *,
+            phase: str = "decision", observation_id: str | int | None = None,
+            observed_at: float | None = None, deadline_ms: float | None = None) -> Decision:
+        """Ask any question type; replay uses it for journals that mix them."""
+        if not isinstance(request, (ChoiceRequest, NoulRequest, ScoreRequest)):
+            raise ValueError("Request must be a ChoiceRequest, NoulRequest or ScoreRequest")
+        kind = request.question_type
+        request = REQUEST_TYPES[kind](**request.to_dict())
         start = self._clock()
         observed_at = start if observed_at is None else observed_at
         if (type(observed_at) not in (int, float) or not math.isfinite(observed_at)
@@ -93,21 +120,29 @@ class Harness:
                                        or not math.isfinite(deadline_ms) or deadline_ms <= 0):
             raise ValueError("Deadline must be finite and positive")
         decision_id = str(uuid4())
-        fields = {"decision_id": decision_id, "phase": phase,
+        fields = {"decision_id": decision_id, "phase": phase, "question_type": kind,
                   "observation_id": observation_id, "packet_hash": request.packet_hash,
-                  "candidate_order": list(request.options), "deadline_ms": deadline_ms,
-                  "backend": self.backend.info.to_dict()}
+                  "candidate_order": (list(request.options)
+                                      if isinstance(request, ChoiceRequest) else None),
+                  "deadline_ms": deadline_ms, "backend": self.backend.info.to_dict()}
+        if isinstance(request, ScoreRequest):
+            fields["level_count"] = len(request.levels)
         if self.record_inputs:
             fields["request"] = request.to_dict()
-        source = "forced" if len(request.options) == 1 else "provider"
+        # One option or one level leaves nothing to ask.
+        forced = (isinstance(request, ChoiceRequest) and len(request.options) == 1
+                  or isinstance(request, ScoreRequest) and len(request.levels) == 1)
+        source = "forced" if forced else "provider"
         started_at_unix_ns = time.time_ns()
         try:
-            if source == "forced":
-                result = DecisionResult(choice=next(iter(request.options)))
+            if forced:
+                result = (DecisionResult(choice=next(iter(request.options)))
+                          if isinstance(request, ChoiceRequest) else ScoreResult(0.0, [1.0], 1.0))
             else:
-                result = self.backend.choose(ChoiceRequest(**request.to_dict()))
-                if not isinstance(result, DecisionResult):
-                    raise DecisionError("invalid_result_type", kind="validation")
+                answer = getattr(self.backend, METHODS[kind], None)
+                if answer is None:
+                    raise DecisionError("unsupported_question_type", kind="capability")
+                result = answer(REQUEST_TYPES[kind](**request.to_dict()))
                 validate_result(request, result, self.backend.info.probability_decimals)
         except (Exception, KeyboardInterrupt) as error:
             finish = self._clock()
@@ -142,7 +177,7 @@ class Harness:
                     usage=asdict(result.usage) if result.usage is not None else None,
                     estimated_api_cost_usd=0.0 if source == "forced" else self._cost(result.usage))
         decision = Decision(decision_id, result, latency_ms, source, missed,
-                            observed_at, finish, deadline_ms, phase)
+                            observed_at, finish, deadline_ms, phase, kind)
         self._pending[decision_id] = decision
         return decision
 

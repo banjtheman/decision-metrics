@@ -11,10 +11,13 @@ import math
 from pathlib import Path
 
 from .exporters import DecisionJSONLExporter, TrainingExporter
-from .types import ChoiceRequest, SCHEMA_VERSION, VERSION, json_copy
+from .types import (ChoiceRequest, NoulRequest, SCHEMA_VERSION, ScoreRequest, VERSION, json_copy,
+                    probability, request_from_dict)
 
 SPLITS = ("train", "validation", "test")
 LABEL_SOURCES = {"human", "teacher", "policy", "self"}
+# Where a label keeps its answer: an option ID, true or false, or a level number.
+TARGETS = {"choice": "choice", "noul": "answer", "score": "level"}
 
 
 def read_annotations(path: str | Path):
@@ -39,10 +42,17 @@ def _identifier(value, name):
 
 
 def _label(value, request, allow_self_labels):
-    if not isinstance(value, dict) or set(value) - {"choice", "source", "labeler", "weight", "details"}:
-        raise ValueError("Label requires choice, source, labeler, and optional weight/details")
-    choice = value.get("choice")
-    if not isinstance(choice, str) or choice not in request.options:
+    target = TARGETS[request.question_type]
+    if not isinstance(value, dict) or set(value) - {target, "source", "labeler", "weight", "details"}:
+        raise ValueError(f"Label requires {target}, source, labeler, and optional weight/details")
+    answer = value.get(target)
+    if isinstance(request, NoulRequest):
+        if type(answer) is not bool:
+            raise ValueError("Label answer must be true or false")
+    elif isinstance(request, ScoreRequest):
+        if type(answer) is not int or not 0 <= answer < len(request.levels):
+            raise ValueError("Label level is not one of the request's levels")
+    elif not isinstance(answer, str) or answer not in request.options:
         raise ValueError("Label choice is not an available option")
     source = value.get("source")
     if not isinstance(source, str) or source not in LABEL_SOURCES:
@@ -56,8 +66,35 @@ def _label(value, request, allow_self_labels):
     details = value.get("details", {})
     if not isinstance(details, dict):
         raise ValueError("Label details must be an object")
-    return {"choice": choice, "source": source, "labeler": labeler,
+    return {target: answer, "source": source, "labeler": labeler,
             "weight": weight, "details": json_copy(details)}
+
+
+def _recorded(result, request) -> bool:
+    """Whether a recorded result answers its request."""
+    if not isinstance(result, dict):
+        return False
+    if isinstance(request, NoulRequest):
+        return probability(result.get("probability"))
+    if isinstance(request, ScoreRequest):
+        score = result.get("score")
+        return type(score) in (int, float) and math.isfinite(score)
+    return isinstance(result.get("choice"), str) and result["choice"] in request.options
+
+
+def _teacher_answer(result, request) -> tuple:
+    """The teacher's most likely answer, and how it was read from the recorded result."""
+    if isinstance(request, NoulRequest):
+        return result["probability"] >= .5, {"method": "recorded_provider_probability",
+                                              "probability": result["probability"], "threshold": .5}
+    if isinstance(request, ScoreRequest):
+        distribution = result.get("probabilities")
+        if isinstance(distribution, list) and len(distribution) == len(request.levels):
+            return (max(range(len(distribution)), key=distribution.__getitem__),
+                    {"method": "recorded_provider_top_level", "score": result["score"]})
+        return (min(len(request.levels) - 1, max(0, round(result["score"]))),
+                {"method": "rounded_expected_level", "score": result["score"]})
+    return result["choice"], {"method": "recorded_provider_choice"}
 
 
 def export_training(events, output: str | Path, *, annotations=(),
@@ -148,7 +185,7 @@ def export_training(events, output: str | Path, *, annotations=(),
             raise ValueError("Teacher backend does not occur in these journals")
 
     review, datasets = [], {name: [] for name in SPLITS}
-    excluded, sources, phases = Counter(), Counter(), Counter()
+    excluded, sources, phases, question_types = Counter(), Counter(), Counter(), Counter()
     packet_splits, packet_labels = {}, {}
     eligible_count = 0
     for key, event in decisions.items():
@@ -158,15 +195,17 @@ def export_training(events, output: str | Path, *, annotations=(),
         action = actions.get(key)
         request_data = event.get("request")
         phase = _identifier(event.get("phase", "decision"), "Phase")
+        question_type = event.get("question_type", "choice")
         request = None
         if request_data is not None:
             try:
-                request = ChoiceRequest(**request_data)
+                request = request_from_dict(question_type, request_data)
             except (ValueError, TypeError):
                 raise ValueError("Invalid recorded request") from None
             if event.get("packet_hash") != request.packet_hash:
                 raise ValueError("Recorded request does not match its packet hash")
-            if event.get("candidate_order") != list(request.options):
+            if (isinstance(request, ChoiceRequest)
+                    and event.get("candidate_order") != list(request.options)):
                 raise ValueError("Recorded candidate order does not match the request")
             prior = packet_splits.setdefault(request.packet_hash, split)
             if prior != split:
@@ -174,12 +213,15 @@ def export_training(events, output: str | Path, *, annotations=(),
         reason = None
         if request is None:
             reason = "inputs_not_recorded"
-        elif len(request.options) < 2 or event.get("source") != "provider":
+        elif (isinstance(request, ChoiceRequest) and len(request.options) < 2
+              or isinstance(request, ScoreRequest) and len(request.levels) < 2
+              or event.get("source") != "provider"):
             reason = "forced_or_nonprovider"
         elif event.get("status") != "ok":
             reason = "decision_error"
-        elif not isinstance(event.get("result"), dict) or not isinstance(event["result"].get("choice"), str) or event["result"]["choice"] not in request.options:
-            raise ValueError("Recorded choice is not an available option")
+        elif not _recorded(event.get("result"), request):
+            raise ValueError("Recorded choice is not an available option" if isinstance(request, ChoiceRequest)
+                             else "Recorded result does not answer its request")
         elif event.get("deadline_missed"):
             reason = "decision_deadline_missed"
         elif action is None:
@@ -200,13 +242,14 @@ def export_training(events, output: str | Path, *, annotations=(),
                 label = _label(labels[key], request, allow_self_labels)
             elif teacher_backend is not None and event.get("backend", {}).get("name") == teacher_backend:
                 backend = event["backend"]
-                label = _label({"choice": event["result"]["choice"], "source": "teacher",
+                answer, how = _teacher_answer(event["result"], request)
+                label = _label({TARGETS[question_type]: answer, "source": "teacher",
                     "labeler": event.get("returned_model") or backend.get("requested_model") or teacher_backend,
-                    "details": {"backend": teacher_backend, "method": "recorded_provider_choice"}},
+                    "details": {"backend": teacher_backend, **how}},
                     request, allow_self_labels)
 
         provenance = {"run_id": run_id, "decision_id": decision_id, "episode_id": group_id,
-            "split": split, "phase": phase, "request": request_data,
+            "split": split, "phase": phase, "question_type": question_type, "request": request_data,
             "observation_id": event.get("observation_id"), "packet_hash": event.get("packet_hash"),
             "backend": event.get("backend"), "model_result": event.get("result"),
             "action": action, "run_outcome": outcomes.get(run_id),
@@ -217,17 +260,19 @@ def export_training(events, output: str | Path, *, annotations=(),
             "source_option_rendering": event.get("backend", {}).get("details", {}).get("option_rendering"),
             "label": label}
         review.append({"run_id": run_id, "decision_id": decision_id,
-            "packet_hash": event.get("packet_hash"), "eligible": reason is None,
-            "excluded_reason": reason, "request": request_data, "label": label,
-            "provenance": provenance})
+            "packet_hash": event.get("packet_hash"), "question_type": question_type,
+            "eligible": reason is None, "excluded_reason": reason, "request": request_data,
+            "label": label, "provenance": provenance})
         if label is None:
             continue
-        prior = packet_labels.setdefault(request.packet_hash, label["choice"])
-        if prior != label["choice"]:
+        target = label[TARGETS[question_type]]
+        prior = packet_labels.setdefault(request.packet_hash, target)
+        if prior != target:
             raise ValueError("Conflicting labels for an identical decision packet")
         phases[provenance["phase"]] += 1
         sources[label["source"]] += 1
-        serialized = json_copy(exporter.serialize(ChoiceRequest(**request.to_dict()),
+        question_types[question_type] += 1
+        serialized = json_copy(exporter.serialize(request_from_dict(question_type, request.to_dict()),
                                                  json_copy(label), json_copy(provenance)))
         if not isinstance(serialized, dict):
             raise ValueError("Exporter must return a finite JSON object")
@@ -246,7 +291,8 @@ def export_training(events, output: str | Path, *, annotations=(),
             ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest(),
         "eligible_decisions": eligible_count, "unlabeled_eligible_decisions": eligible_count - sum(counts.values()),
         "excluded": dict(excluded), "examples": counts, "label_sources": dict(sources),
-        "phases": dict(phases), "run_to_episode": groups, "episode_splits": split_map,
+        "phases": dict(phases), "question_types": dict(question_types),
+        "run_to_episode": groups, "episode_splits": split_map,
         "require_applied": require_applied, "allow_self_labels": allow_self_labels,
         "teacher_backend": teacher_backend,
         "evaluation_ready": bool(counts["train"] and (counts["validation"] or counts["test"])),

@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- Record Noul (yes/no) and Score (ordered levels) questions next to Choice:
+  `NoulRequest`/`NoulResult`, `ScoreRequest`/`ScoreResult`, `Harness.noul()`,
+  `Harness.score()`, and `Harness.ask()` for any type. Events carry
+  `question_type`; journals without it are read as Choice. A one-level Score is
+  forced like a single option.
+- Validate Noul probabilities, and Score ranges, per-level distributions, sums and
+  the expected level within the provider's rounding.
+- Send Noul and Score natively to Jev, Perplexity, Clef, Clef-flash, meraGPT,
+  Strands and generic System One servers. Map them to OpenAI's `predicate` and
+  `score` questions; a Noul with criteria is refused there before any request.
+  OpenRouter and Kev stay Choice-only unless a backend sets `question_types`. A
+  backend without a type records `unsupported_question_type` without a request.
+- Replay `"type": "noul"` and `"type": "score"` packets; summaries count decisions
+  by question type; OpenTelemetry emits `decision.noul` and `decision.score` spans
+  and a `decision.question_type` attribute.
+- Export Noul (`answer`) and Score (`level`) labels and teacher targets, in the
+  model-neutral format and as Strands rows (`false`/`true` options, levels by
+  number).
+- Jev's default key is now `TYPESAFE_API_KEY`, TypeSafe's documented name;
+  `JEV_KEY` still works when it is unset.
+- Jev's default model is now `jev-1.14.0`, the current `jev-latest`. Set
+  `model = "jev-1.13.0"` to keep comparing against earlier runs.
+- Validated live with Jev 1.13 and 1.14 for Noul and Score; the other providers'
+  support follows their documentation and is tested against fixtures.
+
 ## 0.3.0 — 2026-10-11
 
 - Add the native OpenRouter Decisions transport with configurable model IDs,

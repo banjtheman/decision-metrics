@@ -28,6 +28,14 @@ with annotations like this:
 ```
 
 `choice` must be a legal option ID, not its display name or numeric position.
+A Noul label holds `answer` instead, `true` or `false`, and a Score label holds
+`level`, the level number counting from 0 for the lowest:
+
+```json
+{"run_id":"episode-01","decision_id":"COPY_FROM_TRACE","label":{"answer":true,"source":"human","labeler":"reviewer-v1"}}
+{"run_id":"episode-01","decision_id":"COPY_FROM_TRACE","label":{"level":2,"source":"human","labeler":"reviewer-v1"}}
+```
+
 `source` is `human`, `teacher`, `policy`, or `self`. `labeler` identifies the reviewer,
 teacher checkpoint/version, or policy. Optional `weight` is finite and positive;
 optional `details` holds JSON metadata such as an explanation or annotation tool
@@ -41,8 +49,9 @@ decision-metrics export-training output/run-01.jsonl \
 
 Human labels can correct the recorded model's choice. The original response,
 action result, observation ID, run metadata, and episode outcome remain in
-provenance. The model-neutral `decision-jsonl-v1` row contains `request`, explicit
-`candidate_order`, `label`, and `provenance`; structured option values stay intact.
+provenance. The model-neutral `decision-jsonl-v1` row contains `question_type`,
+`request`, explicit `candidate_order` (a Choice's option IDs, null for a Noul or
+Score), `label`, and `provenance`; structured option and level values stay intact.
 
 To explicitly distill recorded predictions from a named backend:
 
@@ -51,14 +60,18 @@ decision-metrics export-training output/jev-replay.jsonl \
   --teacher-backend jev --output output/jev-teacher-data
 ```
 
-Those targets have `source: teacher` and identify the returned model. Explicit
+Those targets have `source: teacher` and identify the returned model. A teacher's
+Noul target is its more likely answer (true at a probability of 0.5 or more), and
+its Score target is its most probable level, or the rounded expected level when no
+distribution was recorded; `details` keeps the recorded probability or score and
+the method. Explicit
 annotations override automatic teacher labels. A teacher prediction remains an
 imitation target; teacher agreement is not an optimal-action accuracy score. If
 using the target model's own predictions, annotate them as `self` and pass
 `--allow-self-labels` so that the experiment records this choice explicitly.
 
 The default eligibility rules require a successful provider decision with at least
-two options, no recorded deadline miss, and an `applied` or `skipped` action. This
+two options or levels, no recorded deadline miss, and an `applied` or `skipped` action. This
 allows labeled offline replay. Add `--require-applied` to require real execution.
 Errors, forced choices, missing inputs, missing acknowledgements, rejected actions,
 expired actions, and other unknown statuses are excluded. Their review rows record
@@ -90,7 +103,7 @@ Packet hashes identify exact inputs; they do not detect semantically similar sta
 Without a split map, all groups go to `train`. The manifest reports
 `evaluation_ready: false` until labeled training data and at least one labeled
 held-out split exist. This is a structural check, not a claim of sample adequacy.
-It records eligibility/exclusion counts, label sources, phase counts, source-event
+It records eligibility/exclusion counts, label sources, phase and question-type counts, source-event
 hash, episode mapping, exporter details, and SHA-256 hashes for each data file.
 Use a fresh output directory for every export.
 
@@ -107,8 +120,15 @@ decision-metrics export-training output/jev-replay.jsonl \
 The label index follows the original candidate order. Structured descriptions use
 the same `json-descriptions-v1` rendering as HTTP inference.
 
-The adapter has been checked with strands-decider 0.1.0's native loader and pointer
-collator. The published v19 checkpoint has a 4,096-token window. Token counting and
+A Noul row has the options `["false", …]` then `["true", …]`, described by the
+request's criteria (null for a side it doesn't describe), and label 0 or 1. A
+Score row has one option per level, lowest first, named `"0"`, `"1"`… with the
+level text as the description, and the level as its label. Both follow Strands'
+documented row format. The format name stays `strands-choice-jsonl` for
+compatibility.
+
+Choice rows have been checked with strands-decider 0.1.0's native loader and pointer
+collator; Noul and Score rows have not been loaded by it yet. The published v19 checkpoint has a 4,096-token window. Token counting and
 training remain runtime-specific: validate every rendered prompt before passing
 it to a trainer that may truncate. Use native option shuffling to preserve target
 binding, and supply explicit episode-separated files rather than randomly
@@ -118,7 +138,9 @@ training or resetting its adapter/head. [Strands source](https://github.com/stra
 ## Add another exporter
 
 Implement the `TrainingExporter` protocol. A serializer receives independent
-copies of the original `ChoiceRequest`, validated label, and joined provenance.
+copies of the original request (a `ChoiceRequest`, `NoulRequest` or `ScoreRequest`;
+check `request.question_type` if you record more than Choice), validated label,
+and joined provenance.
 Return a finite JSON object in the format your trainer expects:
 
 ```python
@@ -159,9 +181,9 @@ manifest = export_training(
 )
 ```
 
-The built-in serializers are model-neutral JSONL and Strands Choice. Kev and Clef
+The built-in serializers are model-neutral JSONL and Strands. Kev and Clef
 can use the same inputs, labels, and split pipeline after their trainer-specific
 schemas are verified; this release does not claim native exporter support for
-those runtimes. This API covers supervised Choice decisions. Reward/reinforcement
-learning datasets, preferences, Score/Noul targets, optimizers, and fine-tuning
-jobs are separate work.
+those runtimes. This API covers supervised Choice, Noul and Score decisions with
+one target each. Reward/reinforcement learning datasets, preferences, probability
+(soft) targets, optimizers, and fine-tuning jobs are separate work.

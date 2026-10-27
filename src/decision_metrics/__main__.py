@@ -5,7 +5,8 @@ import math
 from pathlib import Path
 import sys
 
-from . import BackendInfo, ChoiceRequest, DecisionError, DecisionResult, Harness, JsonlSink
+from . import (BackendInfo, ChoiceRequest, DecisionError, DecisionResult, Harness, JsonlSink,
+               NoulRequest, ScoreRequest)
 from .providers import PROVIDERS, load_backend
 from .report import read_events, summarize
 from .training import export_training, read_annotations
@@ -29,8 +30,16 @@ def packets(path):
                 continue
             try:
                 value = json.loads(line)
-                request = ChoiceRequest(value["state"], value["options"], value["instructions"])
-            except (ValueError, KeyError, TypeError):
+                kind = value.get("type", "choice")
+                if kind == "noul":
+                    request = NoulRequest(value["state"], value["instructions"], value.get("criteria"))
+                elif kind == "score":
+                    request = ScoreRequest(value["state"], value["levels"], value["instructions"])
+                elif kind == "choice":
+                    request = ChoiceRequest(value["state"], value["options"], value["instructions"])
+                else:
+                    raise ValueError
+            except (ValueError, KeyError, TypeError, AttributeError):
                 raise ValueError(f"Invalid decision packet on line {number}") from None
             yield request, value.get("phase", "decision"), value.get("case_id", number)
 
@@ -99,7 +108,7 @@ def main(argv=None):
                         stopped_for_cost = True
                         break
                     try:
-                        decision = harness.choose(request, phase=phase, observation_id=case_id)
+                        decision = harness.ask(request, phase=phase, observation_id=case_id)
                         harness.record_action(decision, "skipped", reason="offline_replay")
                         usage = decision.result.usage
                     except DecisionError as error:

@@ -3,7 +3,7 @@
 
 [backends.jev]
 provider = "jev"
-model = "jev-1.13.0"
+model = "jev-1.14.0"
 deployment = "typesafe-hosted"
 
 [backends.clef-flash]

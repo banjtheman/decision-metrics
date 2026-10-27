@@ -5,9 +5,10 @@ decision models such as Jev, Cloudflare Clef, Microsoft Decision-1, OpenAI
 Decisions, Perplexity Decisions, and Strands Decider.
 
 A decision model chooses from a set of options supplied by your application.
-Those options might be support queues, agent tools, or game movements.
-DecisionMetrics records the inputs, available options, selected choice, and
-probabilities when the model provides them. It measures response latency, token
+Those options might be support queues, agent tools, or game movements. Many can
+also answer a yes/no question (a Noul) or rate something on ordered levels (a
+Score). DecisionMetrics records the inputs, available options or levels, the
+answer, and probabilities when the model provides them. It measures response latency, token
 usage, estimated API cost, and deadline misses, then links each decision to the
 action your application applied, rejected, or skipped.
 
@@ -54,7 +55,7 @@ decision-metrics summary output/support-demo.jsonl output/tools-demo.jsonl
 
 Both scripts use synthetic inputs and deterministic offline rules by default.
 To measure a decision model instead, set its credentials and select a configured
-backend. For example, with `JEV_KEY` set:
+backend. For example, with `TYPESAFE_API_KEY` set:
 
 ```bash
 python examples/support_routing.py --backend jev --output output/support-jev.jsonl
@@ -108,6 +109,65 @@ Record the execution result separately so the trace shows whether the decision
 led to an action. Action statuses are `applied`, `rejected`, `expired`, `skipped`,
 and `unknown` for delivery without a reliable acknowledgement.
 
+## Yes/no questions and ratings
+
+Besides Choice, System One models answer two other question types. A Noul gives
+the probability that a yes/no condition holds. A Score rates the state on ordered
+levels, lowest first, and returns the expected level with one probability per
+level. They are recorded the same way:
+
+```python
+from decision_metrics import Harness, JsonlSink, NoulRequest, ScoreRequest
+from decision_metrics.providers import load_backend
+
+backend = load_backend("examples/providers.toml", "jev")
+try:
+    with JsonlSink("output/reviews-01.jsonl") as sink:
+        bench = Harness(backend, sink, metadata={"application": "review_triage"})
+        review = {"text": "Runs like a slideshow on my Deck after the patch."}
+        slow = bench.noul(NoulRequest(
+            state=review,
+            instructions="Does the reviewer complain that the game runs badly?",
+            criteria={"true": "Performance or stability complaints.",
+                      "false": "Other complaints, or performance mentioned only as fine."},
+        ), phase="reviews")
+        anger = bench.score(ScoreRequest(
+            state=review,
+            levels=["Calm", "Disappointed", "Angry", "Furious"],
+            instructions="How angry is the reviewer?",
+        ), phase="reviews")
+        if slow.result.probability >= 0.7:  # Thresholds belong to the application.
+            flag_for_performance(review)
+            bench.record_action(slow, "applied")
+        else:
+            bench.record_action(slow, "skipped")
+        bench.record_action(anger, "skipped")
+finally:
+    backend.close()
+```
+
+`flag_for_performance` is an application hook. `slow.result.probability` is the
+probability of yes; a Noul has no separate confidence. `anger.result.score` can
+fall between levels: 1.37 with probabilities `[0.0, 0.62, 0.38, 0.0]` is mostly
+Disappointed, partly Angry, so read `anger.result.probabilities` to tell a split
+from a middle answer. Noul criteria are optional and may describe `true`, `false`
+or both. A Score has 1–10 levels; one level is recorded as forced without a
+request, like a single option. `Harness.ask(request)` takes any of the three
+request types.
+
+Validation checks that a Noul probability lies between 0 and 1, and that a Score
+lies within its levels, has one probability per level summing to 1, and matches
+the expected level of those probabilities within the provider's rounding.
+
+Jev, Perplexity, Clef, Clef-flash, meraGPT, Strands and the generic `systemone`
+transport send Noul and Score as native questions. OpenAI Decisions calls a Noul a
+`predicate`, which takes no criteria, so a Noul with criteria is refused there
+before any request; Score levels go to OpenAI with the level number as the label
+and the level text as the description. OpenRouter Decisions and Kev are
+Choice-only by default: set `question_types = ["choice", "noul", "score"]` in a
+backend's TOML entry when the server supports more. A question a backend cannot
+answer is recorded as `unsupported_question_type` without a request.
+
 ## Providers
 
 [examples/providers.toml](https://github.com/banjtheman/decision-metrics/blob/main/examples/providers.toml) contains separate entries for
@@ -119,7 +179,7 @@ library.
 
 | Transport | Configuration and credential environment |
 | --- | --- |
-| Jev System One | `provider = "jev"`; `JEV_KEY` |
+| Jev System One | `provider = "jev"`; `TYPESAFE_API_KEY` (the older `JEV_KEY` also works) |
 | Cloudflare Workers AI | `provider = "clef"` or `"clef-flash"`; `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AUTH_TOKEN` |
 | Perplexity Decisions | `provider = "perplexity"`; `PERPLEXITY_API_KEY` |
 | OpenAI Decisions | `provider = "openai-decisions"`; `OPENAI_API_KEY`; `gpt-6-luna` |
@@ -148,7 +208,9 @@ structured request and records the rendering version in backend metadata.
 The transports are tested against fixtures and a local HTTP server. Jev 1.13,
 the published Strands v19 checkpoint and Microsoft Decision-1 have each passed
 16 frozen Brotato inputs. OpenAI Decisions and Microsoft Decision-1 have also
-completed live Brotato episodes. These checks establish integration behavior, not optimal choices or
+completed live Brotato episodes. Jev 1.13 and 1.14 answered live Noul and Score
+questions on 2026-10-27; the other providers' Noul and Score support follows their
+documentation and is tested against fixtures only. These checks establish integration behavior, not optimal choices or
 comparable model rankings; other live vendor integrations remain unverified.
 
 The OpenAI adapter uses the dedicated `POST /v1/decisions` endpoint. It sends
@@ -193,7 +255,9 @@ visible in telemetry; failed requests are never automatically retried.
 ## Freeze inputs and replay them
 
 A packet is one JSON object per line with `state`, ordered `options`,
-`instructions`, and optional `phase` and `case_id`. The [sample cases](https://github.com/banjtheman/decision-metrics/blob/main/examples/packets.jsonl) are synthetic.
+`instructions`, and optional `phase` and `case_id`. Add `"type": "noul"` (with
+optional `criteria` instead of `options`) or `"type": "score"` (with `levels`) for
+the other question types; a packet without a type is a Choice. The [sample cases](https://github.com/banjtheman/decision-metrics/blob/main/examples/packets.jsonl) are synthetic.
 
 ```bash
 decision-metrics replay examples/packets.jsonl \
@@ -237,7 +301,9 @@ episode outcome. To deliberately imitate another model, pass
 Self-labels require an explicit opt-in. Stale, rejected, failed, or unacknowledged
 decisions are excluded from training and retained in the review file with reasons.
 
-Choose `--format strands` for Strands' native Choice examples, or
+A Noul label holds `answer` (true or false) and a Score label holds `level` (0 is
+the lowest) where a Choice label holds `choice`. Choose `--format strands` for
+Strands' native examples of all three kinds, or
 `--exporter your_package:YourExporter` for another runtime. Exporters control the
 row format; shared code handles labels, outcome joins, whole-episode splits,
 duplicate-input leakage checks, and file hashes. See the
@@ -262,7 +328,9 @@ class MyBackend:
         pass
 ```
 
-Return `Usage` when available. Missing probabilities, confidence, and usage stay
+To answer the other question types, add `noul(request) -> NoulResult` and
+`score(request) -> ScoreResult`; without them those questions are recorded as
+`unsupported_question_type`. Return `Usage` when available. Missing probabilities, confidence, and usage stay
 `None`; a generative or heuristic backend does not need to fabricate them.
 Native HTTP decision adapters require the promised complete option distribution.
 One legal option is recorded as forced without calling the backend.
@@ -292,7 +360,9 @@ with JsonlSink("output/run-otel.jsonl") as local:
     # Call bench.choose and bench.record_action as above.
 ```
 
-It emits `decision.choose` spans and these application-defined metrics:
+It emits `decision.choose`, `decision.noul` and `decision.score` spans, with the
+answer as `decision.choice`, `decision.noul_probability` or `decision.score`, and
+these application-defined metrics:
 
 | Metric | Unit |
 | --- | --- |
@@ -302,7 +372,7 @@ It emits `decision.choose` spans and these application-defined metrics:
 | `decision.api_cost` | USD, known API cost only |
 
 Metric attributes include provider, deployment, requested model, phase, and
-status. Decision/run IDs and packet hashes are trace attributes rather than
+status, plus the question type on decision metrics. Decision/run IDs and packet hashes are trace attributes rather than
 metric dimensions. Raw prompt contents and probability vectors remain in JSONL.
 These names are DecisionMetrics conventions, not official OTel semantic
 conventions. Without an application SDK provider, the API is a no-op. [Official
@@ -316,13 +386,16 @@ the control loop, so use the same export setup across benchmark entries.
 ## Events and summaries
 
 Schema v1 uses `run_start`, `decision`, `action`, and `run_outcome` events. Each
-decision carries a UUID, common-packet SHA-256, candidate order, exact prompt,
+decision carries a UUID, its `question_type` (`choice`, `noul` or `score`; older
+journals have none and are all Choice), common-packet SHA-256,
+candidate order for a Choice, level count for a Score, exact prompt,
 requested/returned model, deployment, timestamps, measured latency, deadline,
 result/error, usage, and estimated API cost. Probabilities and provider confidence
 remain in the result. Authentication headers and HTTP bodies from failures are
 not recorded. Disable prompt contents with `Harness(..., record_inputs=False)`.
 
-Summaries separate deployments and phases, preserve unknown usage/cost counts,
+Summaries separate deployments and phases, count decisions by question type,
+preserve unknown usage/cost counts,
 exclude forced actions from model latency and requests, and reject duplicate
 decision/action IDs. Median and p95 use attempted requests; p95 is the nearest-rank
 percentile. An application outcome is whatever the application actually observed.

@@ -39,7 +39,8 @@ Both scripts default to deterministic offline rules labelled `offline-demo` in
 the telemetry. Their timings describe local example code. They do not supply
 model probabilities or token usage.
 
-To use Jev, set `JEV_KEY` in your environment and run:
+To use Jev, set `TYPESAFE_API_KEY` in your environment (the older `JEV_KEY` name
+also works) and run:
 
 ```bash
 python examples/support_routing.py --backend jev --output output/support-jev.jsonl

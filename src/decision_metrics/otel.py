@@ -38,10 +38,13 @@ class OpenTelemetrySink:
         if event["event"] not in {"decision", "action"}:
             return
         backend = event["backend"]
+        question_type = event.get("question_type", "choice")
         attributes = {"decision.provider": backend["name"],
                       "decision.deployment": backend["deployment"],
                       "decision.model": backend["requested_model"] or "unspecified",
                       "decision.phase": event["phase"], "decision.status": event["status"]}
+        if event["event"] == "decision":
+            attributes["decision.question_type"] = question_type
         if event["event"] == "action":
             self.actions.add(1, attributes)
             self.observation_age.record(event["observation_age_ms"] / 1000, attributes)
@@ -65,8 +68,13 @@ class OpenTelemetrySink:
         if event.get("returned_model"):
             span_attributes["decision.returned_model"] = event["returned_model"]
         if event["status"] == "ok":
-            span_attributes["decision.choice"] = event["result"]["choice"]
-        span = self.tracer.start_span("decision.choose", attributes=span_attributes,
+            # The answer itself: the option picked, the probability of yes, or the expected level.
+            name, field = {"choice": ("decision.choice", "choice"),
+                           "noul": ("decision.noul_probability", "probability"),
+                           "score": ("decision.score", "score")}[question_type]
+            span_attributes[name] = event["result"][field]
+        span_name = "decision.choose" if question_type == "choice" else "decision." + question_type
+        span = self.tracer.start_span(span_name, attributes=span_attributes,
                                       start_time=event["started_at_unix_ns"])
         if event["status"] == "error":
             span.set_status(Status(StatusCode.ERROR, event["error"]["code"]))

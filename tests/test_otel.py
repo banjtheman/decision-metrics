@@ -10,7 +10,8 @@ try:
 except ImportError:
     MeterProvider = None
 
-from decision_metrics import ChoiceRequest, DecisionError, DecisionResult, Harness, Usage
+from decision_metrics import (ChoiceRequest, DecisionError, DecisionResult, Harness, NoulRequest,
+                              NoulResult, ScoreRequest, ScoreResult, Usage)
 from decision_metrics.otel import OpenTelemetrySink
 from test_decisions import FakeBackend, MemorySink
 
@@ -52,6 +53,35 @@ class OpenTelemetryTests(unittest.TestCase):
                     self.assertNotIn("decision.packet_hash", point.attributes)
             self.assertEqual(sink.export_failures, 0)
             self.assertIn("LOCAL_ONLY", json.dumps(local.events))
+        finally:
+            traces.shutdown()
+            meters.shutdown()
+
+    def test_noul_and_score_spans_carry_their_type_and_answer(self):
+        exporter = InMemorySpanExporter()
+        traces = TracerProvider()
+        traces.add_span_processor(SimpleSpanProcessor(exporter))
+        reader = InMemoryMetricReader()
+        meters = MeterProvider(metric_readers=[reader])
+        try:
+            sink = OpenTelemetrySink(MemorySink(), tracer=traces.get_tracer("test"),
+                                     meter=meters.get_meter("test"))
+            backend = FakeBackend([])
+            backend.noul = lambda request: NoulResult(.93, usage=Usage(10, 0))
+            backend.score = lambda request: ScoreResult(1.0, [0.0, 1.0, 0.0])
+            harness = Harness(backend, sink)
+            harness.noul(NoulRequest({"review": "LOCAL_ONLY"}, "Is it slow?"))
+            harness.score(ScoreRequest({}, ["Low", "Mid", "High"], "How slow?"))
+            noul, score = exporter.get_finished_spans()
+            self.assertEqual((noul.name, noul.attributes["decision.noul_probability"]), ("decision.noul", .93))
+            self.assertEqual((score.name, score.attributes["decision.score"]), ("decision.score", 1.0))
+            self.assertEqual(score.attributes["decision.question_type"], "score")
+            self.assertNotIn("LOCAL_ONLY", str(dict(noul.attributes)))
+            data = reader.get_metrics_data()
+            requests = next(metric for resource in data.resource_metrics for scope in resource.scope_metrics
+                            for metric in scope.metrics if metric.name == "decision.requests")
+            self.assertEqual(sorted(point.attributes["decision.question_type"]
+                                    for point in requests.data.data_points), ["noul", "score"])
         finally:
             traces.shutdown()
             meters.shutdown()
