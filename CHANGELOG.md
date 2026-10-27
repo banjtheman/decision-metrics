@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-27
 
 - Record Noul (yes/no) and Score (ordered levels) questions next to Choice:
   `NoulRequest`/`NoulResult`, `ScoreRequest`/`ScoreResult`, `Harness.noul()`,

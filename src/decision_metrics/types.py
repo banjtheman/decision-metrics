@@ -11,7 +11,7 @@ import json
 import math
 from typing import Any, ClassVar, NoReturn, Protocol, TypeVar
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 SCHEMA_VERSION = 1
 QUESTION_TYPES = ("choice", "noul", "score")
 MAX_SCORE_LEVELS = 10

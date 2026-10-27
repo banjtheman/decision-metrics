@@ -114,7 +114,9 @@ and `unknown` for delivery without a reliable acknowledgement.
 Besides Choice, System One models answer two other question types. A Noul gives
 the probability that a yes/no condition holds. A Score rates the state on ordered
 levels, lowest first, and returns the expected level with one probability per
-level. They are recorded the same way:
+level. Both need DecisionMetrics 0.4.0 or later
+(`python -m pip install --upgrade 'decision-metrics>=0.4.0'`) and are recorded the
+same way:
 
 ```python
 from decision_metrics import Harness, JsonlSink, NoulRequest, ScoreRequest
