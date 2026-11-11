@@ -54,10 +54,39 @@ decisions are recorded without replacing them with offline rules.
 
 Use `--backend` and `--config` to select another entry from
 [providers.toml](providers.toml), including Clef, Perplexity, OpenAI Decisions,
-Microsoft Decision-1 through OpenRouter, Ollama, or a running local Strands server.
+Microsoft Decision-1 through OpenRouter, Google Decisions, Ollama, or a running
+local Strands server.
 The OpenAI and OpenRouter adapters require DecisionMetrics 0.3.0 or later:
 `python -m pip install --upgrade 'decision-metrics>=0.3.0'`.
 Set `--deadline-ms` to match the time budget for your application.
+
+## Use Google Gemini Decision
+
+Google Decisions support is unreleased; install from this checkout and set
+`GEMINI_API_KEY` in your environment. `GOOGLE_API_KEY` is used only when the former
+is absent; `api_key_env` can select another credential variable explicitly.
+
+```bash
+python -m pip install -e .
+python examples/support_routing.py --backend google-decisions \
+  --deadline-ms 30000 --output output/support-google-01.jsonl
+python examples/agent_tools.py --backend google-decisions \
+  --deadline-ms 30000 --output output/tools-google-01.jsonl
+```
+
+The entry uses `gemini-decision-1` at Google's native `/v1beta/decisions` endpoint,
+with a 30-second HTTP timeout. The examples send synthetic inputs and apply the
+chosen actions locally. Choice, Noul and Score use the same library interfaces;
+structured inputs are encoded as JSON text. Google sorts Choice keys by UTF-8
+bytes before scoring, while the journal retains the application's request order.
+
+The default cost estimate is Google's paid-tier $0.10 per million input tokens,
+with no output charge, checked 2026-11-11. Set `input_per_million_usd = 0` in this
+entry when using the free tier. This adapter exposes one text/JSON question per
+request; see the [main README](../README.md#google-gemini-decision) for limits and
+field mapping, and [Google's guide](https://aistudio.google.com/docs/decisions-api)
+for API access. The three routing examples and eight Choice/Noul/Score replay
+checks passed live on 2026-11-11; see the [test report](../docs/google-decisions-smoke-20261111.md).
 
 ## Use Ollama locally or in the cloud
 

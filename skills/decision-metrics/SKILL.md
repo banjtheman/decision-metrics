@@ -48,9 +48,9 @@ Use the project's existing Python environment and dependency manager. Add
 third-party runtime dependencies; `decision-metrics[otel]` is optional. Noul and
 Score require 0.4.0 or later.
 
-Check the installed API against the version being documented. Ollama support is
-on repository `main` and was unreleased when this skill was written; do not assume
-the PyPI 0.4.0 package contains it. If the required provider is absent from
+Check the installed API against the version being documented. Ollama and Google
+Decisions support are on repository `main` and unreleased; do not assume
+the PyPI 0.4.0 package contains them. If the required provider is absent from
 `python -m decision_metrics providers`, inspect the current release or use a
 reviewed repository revision, recorded in the project's dependencies. Avoid
 silently selecting a floating development version.

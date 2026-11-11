@@ -26,6 +26,16 @@ deployment = "openai-hosted"
 # Set OPENAI_API_KEY. Decisions uses its own input-only rate, checked 2026-10-06.
 # Regional processing premiums / long-context multipliers need a price override.
 
+[backends.google-decisions]
+provider = "google-decisions"
+model = "gemini-decision-1"
+deployment = "google-hosted"
+timeout = 30
+# Set GEMINI_API_KEY; GOOGLE_API_KEY is a fallback. api_key_env overrides both.
+# Paid-tier default: $0.10 / million input tokens, checked 2026-11-11.
+# Set input_per_million_usd = 0 for applicable free-tier usage.
+# Google sorts Choice option keys by UTF-8 bytes before model evaluation.
+
 [backends.ollama-nimble]
 provider = "ollama"
 model = "nimble"

@@ -142,8 +142,9 @@ before applying the action. Record an end-of-run result with
 | `ScoreRequest` | `state`, `levels` lowest first, `instructions` | `.score`, `.probabilities` list, `.confidence` |
 
 Inputs must be JSON-compatible and finite. HTTP adapters render structured option
-descriptions as canonical JSON text. Candidate IDs and presentation order stay
-intact. Score supports 1–10 levels; provider capability checks can be stricter.
+descriptions as canonical JSON text. Candidate IDs and original request order stay
+intact in the journal; Google sorts Choice keys by UTF-8 bytes before evaluation.
+Score supports 1–10 levels; provider capability checks can be stricter.
 One alternative is forced locally. Native providers require complete valid
 distributions; custom backends can omit probabilities when unavailable.
 
@@ -185,6 +186,25 @@ model `clef`, and `OLLAMA_API_KEY`. The local cloud proxy uses `clef:cloud` thro
 a signed-in local server. Cloud pricing stays unknown unless configured; never
 reuse the local zero-cost setting for it. Honor the chosen deployment and avoid
 automatic paid-model substitution when credentials are missing.
+
+For Google Gemini Decision, use `provider = "google-decisions"` and
+`model = "gemini-decision-1"` with a repository revision that includes the adapter
+(not PyPI 0.4.0). It calls Google's native `/v1beta/decisions` endpoint with
+`x-goog-api-key`, resolved from `GEMINI_API_KEY`, then `GOOGLE_API_KEY` unless
+`api_key_env` is explicit. The adapter handles Choice, Noul and Score; it serializes
+structured state as compact JSON text and translates Noul criteria keys to
+`true_description`/`false_description`. Native usage totals are retained; omitted
+returned model labels remain unknown. Google's separate Noul confidence is not
+exposed by the common Noul result, which contains its yes probability.
+
+Google supports more capabilities than this interface: the adapter sends one
+text/JSON question at a time, supports up to 255 Choice options, and retains the
+library's 1–10 Score levels. Do not treat structured state as media blocks or
+claim that request order controls Google's Choice evaluation order. The default
+cost estimate uses the $0.10/million paid input rate checked 2026-11-11; explicitly
+set a zero input rate for applicable free-tier use. Consult the
+[Decisions API guide](https://aistudio.google.com/docs/decisions-api) and
+[pricing](https://aistudio.google.com/docs/pricing#gemini-decision).
 
 ## Replay, training, and OpenTelemetry
 

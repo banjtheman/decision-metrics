@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add `provider = "google-decisions"` for Gemini Decision 1 through Google's
+  native Decisions API. Support Choice, Noul and Score, API-key header auth,
+  structured state rendering, native token usage, and the dated paid-tier price.
+  Include configuration and setup guidance; document Google's Choice key sorting
+  and the library's single-question text/JSON scope. Eleven live requests passed
+  on 2026-11-11 across Choice, Noul, Score and the support-routing example,
+  including one-sided Noul criteria; preserve the results in a smoke-test report.
 - Add a copy-and-paste agent setup prompt and a portable `decision-metrics`
   skill with integration guidance, an offline example, installation instructions,
   and an optional fine-tuning workflow from reviewed labels to model evaluation.

@@ -1,4 +1,4 @@
-"""Documented System One, Ollama, Workers AI, Perplexity, OpenAI and OpenRouter transports.
+"""Documented System One, Ollama, Google, Workers AI and Decisions transports.
 
 No SDK dependency, redirects, background calls, or automatic retries.
 """
@@ -49,6 +49,12 @@ PROVIDERS = {
                          "price_checked_at": "2026-10-06", "question_types": ALL_TYPES},
     "openrouter-decisions": {"endpoint": "https://openrouter.ai/api/alpha/decisions",
                              "key_env": "OPENROUTER_API_KEY"},
+    "google-decisions": {"model": "gemini-decision-1",
+                         "endpoint": "https://generativelanguage.googleapis.com/v1beta/decisions",
+                         "key_env": "GEMINI_API_KEY", "old_key_env": "GOOGLE_API_KEY",
+                         "price": .10, "source": "https://aistudio.google.com/docs/pricing#gemini-decision",
+                         "price_checked_at": "2026-11-11", "question_types": ALL_TYPES,
+                         "probability_decimals": 2, "timeout": 30.0},
     "strands": {"model": "strands-decider-2B-hobson-v19",
                 "endpoint": "http://127.0.0.1:8000/v1/systemone", "question_types": ALL_TYPES},
     "ollama": {"model": "nimble", "endpoint": "http://localhost:11434/v1/systemone",
@@ -69,16 +75,30 @@ def _safe_model(value):
     return None
 
 
+def _google_usage_fields(value):
+    if not isinstance(value, dict):
+        return {}
+    return {"input_tokens": value.get("total_input_tokens"),
+            "output_tokens": value.get("total_output_tokens")}
+
+
+def _parse_google_usage(value):
+    return parse_usage(_google_usage_fields(value))
+
+
 class JsonTransport:
     """One persistent HTTP connection. Failed calls are never resent."""
 
-    def __init__(self, endpoint: str, *, api_key: str | None = None, timeout: float = 2.0):
+    def __init__(self, endpoint: str, *, api_key: str | None = None, timeout: float = 2.0,
+                 auth_header: str = "Authorization", usage_parser=parse_usage):
         url = urlsplit(endpoint)
         if (url.scheme not in {"https", "http"} or not url.hostname or url.username is not None
                 or url.password is not None or url.query or url.fragment):
             raise ValueError("Endpoint requires HTTP(S), a host, and no credentials/query/fragment")
         if url.scheme == "http" and api_key and url.hostname not in {"localhost", "127.0.0.1", "::1"}:
-            raise ValueError("Bearer authentication on a remote endpoint requires HTTPS")
+            raise ValueError("API authentication on a remote endpoint requires HTTPS")
+        if auth_header not in {"Authorization", "x-goog-api-key"}:
+            raise ValueError("Unsupported authentication header")
         if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("Timeout must be finite and positive")
         # Accessing url.port validates its numeric range before any network activity.
@@ -88,13 +108,16 @@ class JsonTransport:
         self._path = url.path or "/"
         self._timeout = timeout
         self._api_key = api_key
+        self._auth_header = auth_header
+        self._usage_parser = usage_parser
         self._connection = None
 
     def post(self, payload: dict) -> dict:
         body = json.dumps(payload, allow_nan=False, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self._api_key:
-            headers["Authorization"] = "Bearer " + self._api_key
+            headers[self._auth_header] = ("Bearer " + self._api_key
+                                           if self._auth_header == "Authorization" else self._api_key)
         try:
             if self._connection is None:
                 connection_type = HTTPSConnection if self._scheme == "https" else HTTPConnection
@@ -115,7 +138,7 @@ class JsonTransport:
             document = None
         if not 200 <= status < 300:
             self.close()
-            usage = parse_usage(document.get("usage")) if isinstance(document, dict) else None
+            usage = self._usage_parser(document.get("usage")) if isinstance(document, dict) else None
             raise DecisionError("http_error", kind="http", status_code=status, usage=usage)
         if not isinstance(document, dict):
             raise DecisionError("invalid_json_response", kind="validation")
@@ -375,6 +398,37 @@ class OllamaDecisionBackend(ChoiceHTTPBackend):
         return payload
 
 
+class GoogleDecisionsBackend(ChoiceHTTPBackend):
+    """Google's native Decisions API with text input and named typed questions."""
+
+    def __init__(self, info: BackendInfo, *, transport: JsonTransport,
+                 question_types=ALL_TYPES):
+        super().__init__(info, transport=transport, question_types=question_types)
+        self.info = replace(self.info, details={**self.info.details,
+            "api": "google-decisions", "question_name": "action",
+            "state_rendering": "text-or-compact-json-v1",
+            "provider_option_order": "utf8-byte-sorted",
+            "confidence_semantics": "top-outcome-probability"})
+
+    def _payload(self, request) -> dict:
+        shared_input = request.state if isinstance(request.state, str) else json.dumps(
+            request.state, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        question = _question(request)
+        if isinstance(request, NoulRequest) and request.criteria is not None:
+            question["criteria"] = {key + "_description": description
+                                    for key, description in question["criteria"].items()}
+        return {"model": self.info.requested_model, "input": shared_input,
+                "questions": {"action": question}}
+
+    def _ask(self, request) -> tuple[dict, object]:
+        document, answer = super()._ask(request)
+        # Absence remains unknown; malformed reported totals stay validation errors.
+        # Do not infer zero output usage from the model's documented behavior.
+        if "usage" in document:
+            document = {**document, "usage": _google_usage_fields(document["usage"])}
+        return document, answer
+
+
 def make_backend(settings: dict, *, name: str | None = None,
                  environ: dict | None = None) -> ChoiceHTTPBackend:
     """Resolve credentials at runtime; public metadata contains no credential fields."""
@@ -414,13 +468,18 @@ def make_backend(settings: dict, *, name: str | None = None,
         raise ValueError("OpenRouter Decisions requires an explicit model")
     if provider == "ollama" and model is None:
         raise ValueError("Ollama requires a model")
+    if provider == "google-decisions" and model is None:
+        raise ValueError("Google Decisions requires a model")
     price_value = settings.get("input_per_million_usd", defaults.get("price"))
     price = None if price_value is None else Pricing(
         price_value, settings.get("output_per_million_usd", 0.0),
         settings.get("price_source", defaults.get("source", "user configuration")),
         settings.get("price_checked_at", defaults.get("price_checked_at", "2026-10-02")))
+    transport_options = {"auth_header": "x-goog-api-key", "usage_parser": _parse_google_usage} \
+        if provider == "google-decisions" else {}
     transport = JsonTransport(endpoint, api_key=api_key,
-                              timeout=settings.get("timeout", defaults.get("timeout", 2.0)))
+                              timeout=settings.get("timeout", defaults.get("timeout", 2.0)),
+                              **transport_options)
     info = BackendInfo(name or settings.get("name", provider), model,
                        settings.get("deployment", provider), endpoint, price,
                        settings.get("details", {}),
@@ -435,6 +494,8 @@ def make_backend(settings: dict, *, name: str | None = None,
     if provider == "ollama":
         return OllamaDecisionBackend(info, transport=transport, question_types=question_types,
                                      keep_alive=settings.get("keep_alive"))
+    if provider == "google-decisions":
+        return GoogleDecisionsBackend(info, transport=transport, question_types=question_types)
     return ChoiceHTTPBackend(info, transport=transport,
                              envelope="cloudflare" if provider in {"clef", "clef-flash"} else "direct",
                              max_options=defaults.get("max_options", 255),

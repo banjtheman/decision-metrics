@@ -2,7 +2,8 @@
 
 DecisionMetrics is a Python library for recording traces and metrics from
 decision models such as Jev, Cloudflare Clef, Microsoft Decision-1, OpenAI
-Decisions, Ollama decision models, Perplexity Decisions, and Strands Decider.
+Decisions, Google Gemini Decision, Ollama decision models, Perplexity Decisions,
+and Strands Decider.
 
 A decision model chooses from a set of options supplied by your application.
 Those options might be support queues, agent tools, or game movements. Many can
@@ -32,8 +33,8 @@ dependency manager, and existing model/decision calls. Read:
 https://github.com/banjtheman/decision-metrics
 https://raw.githubusercontent.com/banjtheman/decision-metrics/main/skills/decision-metrics/SKILL.md
 Follow the skill's relevant references and check the API against the version you
-install. Ollama support currently requires the repository version; do not assume
-it is included in PyPI 0.4.0.
+install. Google Decisions and Ollama support currently require the repository
+version; do not assume they are included in PyPI 0.4.0.
 
 Choose one useful decision point in this project, such as routing, tool selection,
 a yes/no check, or a rating. Preserve the existing provider, model, application
@@ -209,8 +210,8 @@ Validation checks that a Noul probability lies between 0 and 1, and that a Score
 lies within its levels, has one probability per level summing to 1, and matches
 the expected level of those probabilities within the provider's rounding.
 
-Jev, Perplexity, Clef, Clef-flash, Ollama, meraGPT, Strands and the generic `systemone`
-transport send Noul and Score as native questions. OpenAI Decisions calls a Noul a
+Jev, Perplexity, Clef, Clef-flash, Google Decisions, Ollama, meraGPT, Strands and
+the generic `systemone` transport send Noul and Score as native questions. OpenAI Decisions calls a Noul a
 `predicate`, which takes no criteria, so a Noul with criteria is refused there
 before any request; Score levels go to OpenAI with the level number as the label
 and the level text as the description. OpenRouter Decisions and Kev are
@@ -222,7 +223,7 @@ answer is recorded as `unsupported_question_type` without a request.
 
 [examples/providers.toml](https://github.com/banjtheman/decision-metrics/blob/main/examples/providers.toml) contains separate entries for
 Jev, Clef, Clef-flash, Microsoft Decision-1 via OpenRouter, OpenAI Decisions,
-Perplexity, Ollama local/cloud, Strands local/remote, Kev, and meraGPT.
+Google Decisions, Perplexity, Ollama local/cloud, Strands local/remote, Kev, and meraGPT.
 Download that file to `examples/providers.toml` before using the examples below,
 or clone the repository to get all sample files. They are not installed with the
 library.
@@ -233,6 +234,7 @@ library.
 | Cloudflare Workers AI | `provider = "clef"` or `"clef-flash"`; `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_AUTH_TOKEN` |
 | Perplexity Decisions | `provider = "perplexity"`; `PERPLEXITY_API_KEY` |
 | OpenAI Decisions | `provider = "openai-decisions"`; `OPENAI_API_KEY`; `gpt-6-luna` |
+| Google Decisions | `provider = "google-decisions"`; `GEMINI_API_KEY` (fallback `GOOGLE_API_KEY`); `gemini-decision-1` |
 | OpenRouter Decisions | `provider = "openrouter-decisions"`; `OPENROUTER_API_KEY`; explicit model ID |
 | Ollama Decision API | `provider = "ollama"`; local server needs no key; direct ollama.com uses `OLLAMA_API_KEY` |
 | Local Strands / Kev | `provider = "strands"` or `"kev"`; local HTTP endpoint |
@@ -253,15 +255,19 @@ they are not a runtime attestation. [Strands serving instructions](https://githu
 
 Option descriptions supplied as objects, arrays, numbers, booleans, or null are
 encoded as canonical JSON text for HTTP adapters; existing text stays unchanged.
-Option IDs and presentation order are preserved. The journal keeps the original
-structured request and records the rendering version in backend metadata.
+Option IDs and request order are preserved in the journal. Google sorts Choice
+keys in UTF-8 byte order before model evaluation, so its model sees a different
+order when the application's keys are unsorted. The journal keeps the original
+structured request and records the rendering version and provider behavior in
+backend metadata.
 
 The transports are tested against fixtures and a local HTTP server. Jev 1.13,
 the published Strands v19 checkpoint and Microsoft Decision-1 have each passed
 16 frozen Brotato inputs. OpenAI Decisions and Microsoft Decision-1 have also
 completed live Brotato episodes. Jev 1.13 and 1.14 answered live Noul and Score
 questions on 2026-10-27. Ollama Tev1 0.8B passed live Choice, Noul and Score checks
-on 2026-11-11; the other providers' Noul and Score support follows their
+on 2026-11-11, and Google Gemini Decision 1 passed eleven live requests across
+all three question types that day. The other providers' Noul and Score support follows their
 documentation and is tested against fixtures only. These checks establish integration behavior, not optimal choices or
 comparable model rankings; other live vendor integrations remain unverified.
 
@@ -303,6 +309,46 @@ Set `OPENROUTER_API_KEY` in your environment, or configure `api_key_env` as abov
 The example applies three tool choices to local fixtures and records their
 inputs, outputs and action results. HTTP failures, including rate limits, stay
 visible in telemetry; failed requests are never automatically retried.
+
+### Google Gemini Decision
+
+The Google adapter calls `POST https://generativelanguage.googleapis.com/v1beta/decisions`
+with `gemini-decision-1`, using `x-goog-api-key` authentication. It supports Choice,
+Noul and Score through the existing Python interface, with no Google SDK dependency.
+Google Decisions support is unreleased; install from this checkout and set
+`GEMINI_API_KEY` in your environment before running:
+
+```bash
+python -m pip install -e .
+python examples/support_routing.py --backend google-decisions \
+  --deadline-ms 30000 --output output/support-google-01.jsonl
+decision-metrics summary output/support-google-01.jsonl
+```
+
+`GOOGLE_API_KEY` is a fallback when `GEMINI_API_KEY` is absent. Set `api_key_env`
+to choose another variable explicitly. The sample allows 30 seconds for HTTP
+responses; tune that timeout and the action deadline for your application.
+
+Plain-text state stays unchanged; structured state is sent as compact JSON text.
+Noul criteria named `true` and `false` map to Google's `true_description` and
+`false_description`. Choice IDs remain unchanged, but Google sorts them by UTF-8
+bytes before scoring and breaks exact ties using that order. Native total input
+and output token counts map to the common usage fields. A returned model label
+stays unknown when Google omits it. Choice and Score confidence is preserved;
+the common Noul result exposes the probability only, without a separate confidence.
+
+The adapter uses one question per request and text/JSON state. It supports up to
+255 Choice options and the library's 1–10 Score levels (one alternative is forced
+locally). Google's media inputs, multi-question requests, and larger score scales
+are not exposed through this interface. The default estimate uses the paid-tier
+input rate of $0.10 per million tokens and zero output charges, checked
+2026-11-11; set `input_per_million_usd = 0` for applicable free-tier usage.
+See [Google's Decisions API guide](https://aistudio.google.com/docs/decisions-api)
+and [pricing](https://aistudio.google.com/docs/pricing#gemini-decision).
+Fixture and local HTTP tests cover the integration. Eleven live requests passed
+on 2026-11-11, including all three question types, one-sided Noul criteria, and
+the support-routing example. See the [live test report](https://github.com/banjtheman/decision-metrics/blob/main/docs/google-decisions-smoke-20261111.md)
+for results and scope.
 
 ### Ollama decision models
 

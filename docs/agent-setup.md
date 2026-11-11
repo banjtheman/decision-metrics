@@ -24,11 +24,12 @@ action results cross it. The prompt does not create a native SDK for that langua
 - A clear distinction between fixture checks and live model checks, including
   any missing credential, server, or model needed to complete live verification.
 
-Installing the released package is enough for the published features. Ollama is
-currently available on the repository's `main` branch and is not in PyPI 0.4.0.
-An agent using Ollama should install from a reviewed checkout or Git revision,
+Installing the released package is enough for the published features. Ollama and
+Google Decisions are not in PyPI 0.4.0; use the repository for these adapters.
+An agent using either should install from a reviewed checkout or Git revision,
 record that revision in the project's dependency configuration, and verify that
-`provider = "ollama"` is available. See the [Ollama setup](../README.md#ollama-decision-models).
+the selected provider is available. See the [Ollama setup](../README.md#ollama-decision-models)
+or [Google Decisions setup](../README.md#google-gemini-decision).
 The examples and agent skill live in the repository; a package installation does
 not install the skill into your coding agent.
 
