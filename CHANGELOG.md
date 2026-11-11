@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a copy-and-paste agent setup prompt and a portable `decision-metrics`
+  skill with integration guidance, an offline example, installation instructions,
+  and an optional fine-tuning workflow from reviewed labels to model evaluation.
 - Add `provider = "ollama"` for Choice, Noul and Score through Ollama's native
   `/v1/systemone` endpoint, with Nimble and an unauthenticated local server as
   defaults, a 26-option limit, and optional `keep_alive` configuration.

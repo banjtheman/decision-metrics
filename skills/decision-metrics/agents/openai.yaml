@@ -1,0 +1,4 @@
+interface:
+  display_name: "DecisionMetrics"
+  short_description: "Integrate and verify decision traces and metrics"
+  default_prompt: "Use $decision-metrics to set up decision telemetry in this project and verify it with a runnable example."

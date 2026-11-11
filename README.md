@@ -21,6 +21,54 @@ Python 3.11+. The core uses only the standard library. OpenTelemetry is optional
 
 ## Install and try it offline
 
+Open your project in Codex, Claude Code, Cursor, or another coding agent and paste
+this prompt. It needs no project names or other placeholders filled in:
+
+```text
+Set up DecisionMetrics in this repository and leave a working, tested integration.
+
+Read the repository's agent instructions, identify its language, runtime,
+dependency manager, and existing model/decision calls. Read:
+https://github.com/banjtheman/decision-metrics
+https://raw.githubusercontent.com/banjtheman/decision-metrics/main/skills/decision-metrics/SKILL.md
+Follow the skill's relevant references and check the API against the version you
+install. Ollama support currently requires the repository version; do not assume
+it is included in PyPI 0.4.0.
+
+Choose one useful decision point in this project, such as routing, tool selection,
+a yes/no check, or a rating. Preserve the existing provider, model, application
+rules, and action ownership. Wrap the existing call or use a supported backend;
+do not make a second model call just to record the first. DecisionMetrics is a
+Python 3.11+ library: use the project's Python environment where available. For
+another language, use an existing Python service boundary or a small, documented
+Python adapter that fits the project; do not invent a JavaScript SDK or rewrite
+the application. If there is no suitable decision point, add a clearly isolated
+project-relevant example and explain where integration would belong.
+
+Implement the appropriate Choice, Noul, or Score request, JSONL recording, and
+the application's actual action result. Keep failures visible, record expired
+or skipped decisions honestly, and leave unavailable probabilities, usage, and
+costs unknown. Protect secrets and sensitive inputs; explain what the journal
+records and keep generated traces out of version control. Use unique output
+paths and close the backend and sink.
+
+Add focused checks using synthetic inputs, run them, and inspect the journal and
+summary. Exercise the real backend if this project's setup and authorization
+allow it. Missing credentials or a model server must not block the offline
+integration: document the exact remaining setup and label fixture results as
+offline. Finish with changed files, install/run/summary commands, test results,
+and any remaining live-check limitations. Implement the work, not just a plan.
+```
+
+For repeated use, install the reusable [DecisionMetrics skill](https://github.com/banjtheman/decision-metrics/blob/main/skills/decision-metrics/SKILL.md).
+The [agent setup guide](https://github.com/banjtheman/decision-metrics/blob/main/docs/agent-setup.md) explains installation for Codex,
+Claude Code, and other agents, plus what a completed setup should contain.
+For training work, the skill includes an optional
+[fine-tuning workflow](https://github.com/banjtheman/decision-metrics/blob/main/skills/decision-metrics/references/fine-tuning.md)
+covering reviewed labels, dataset export, trainer selection, and model evaluation.
+
+### Install manually
+
 With your Python 3.11+ environment active:
 
 ```bash
