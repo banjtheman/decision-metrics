@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Add `provider = "ollama"` for Choice, Noul and Score through Ollama's native
+  `/v1/systemone` endpoint, with Nimble and an unauthenticated local server as
+  defaults, a 26-option limit, and optional `keep_alive` configuration.
+- Support cloud models through a local Ollama server or directly at ollama.com
+  with `OLLAMA_API_KEY`. Include local and cloud example configurations; cloud
+  pricing stays unknown until configured.
+- Preserve probabilities, confidence, token usage and returned model labels in
+  the existing telemetry and replay formats. Ollama integration is covered by
+  fixtures and local HTTP tests, plus nine live `tev1:0.8b` requests on 2026-11-11.
+  Include a small-model configuration and a live smoke-test report. Nimble and
+  cloud model calls remain unverified.
+
 ## 0.4.0 — 2026-10-27
 
 - Record Noul (yes/no) and Score (ordered levels) questions next to Choice:

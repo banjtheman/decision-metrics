@@ -1,4 +1,4 @@
-"""Documented System One, Workers AI, Perplexity, OpenAI and OpenRouter transports.
+"""Documented System One, Ollama, Workers AI, Perplexity, OpenAI and OpenRouter transports.
 
 No SDK dependency, redirects, background calls, or automatic retries.
 """
@@ -51,6 +51,9 @@ PROVIDERS = {
                              "key_env": "OPENROUTER_API_KEY"},
     "strands": {"model": "strands-decider-2B-hobson-v19",
                 "endpoint": "http://127.0.0.1:8000/v1/systemone", "question_types": ALL_TYPES},
+    "ollama": {"model": "nimble", "endpoint": "http://localhost:11434/v1/systemone",
+               "max_options": 26, "probability_decimals": 4, "question_types": ALL_TYPES,
+               "timeout": 120.0},
     "kev": {"model": "kev-latest", "endpoint": "http://127.0.0.1:8008/v1/systemone"},
     "meragpt": {"model": "state-decider-1", "endpoint": "https://meragpt.com/v1/systemone",
                 "key_env": "MERAGPT_API_KEY", "price": .04,
@@ -348,6 +351,30 @@ class OpenRouterDecisionsBackend(ChoiceHTTPBackend):
         return {**super()._payload(request), "provider": {"allow_fallbacks": False}}
 
 
+class OllamaDecisionBackend(ChoiceHTTPBackend):
+    """Ollama's native System One endpoint, including local model lifetime control."""
+
+    def __init__(self, info: BackendInfo, *, transport: JsonTransport,
+                 question_types=ALL_TYPES, keep_alive: str | float | None = None):
+        if keep_alive is not None and not (
+                isinstance(keep_alive, str) and keep_alive.strip()
+                or type(keep_alive) in (int, float) and math.isfinite(keep_alive)):
+            raise ValueError("Ollama keep_alive must be a duration string or finite seconds")
+        super().__init__(info, transport=transport, max_options=26,
+                         question_types=question_types)
+        self._keep_alive = keep_alive
+        details = {**self.info.details, "api": "ollama-systemone"}
+        if keep_alive is not None:
+            details["keep_alive"] = keep_alive
+        self.info = replace(self.info, details=details)
+
+    def _payload(self, request) -> dict:
+        payload = super()._payload(request)
+        if self._keep_alive is not None:
+            payload["keep_alive"] = self._keep_alive
+        return payload
+
+
 def make_backend(settings: dict, *, name: str | None = None,
                  environ: dict | None = None) -> ChoiceHTTPBackend:
     """Resolve credentials at runtime; public metadata contains no credential fields."""
@@ -369,7 +396,12 @@ def make_backend(settings: dict, *, name: str | None = None,
         raise ValueError("Provider requires an endpoint")
     if (urlsplit(endpoint).hostname or "").endswith(".example"):
         raise ValueError("Replace the example endpoint with a real server before use")
-    key_env = settings.get("api_key_env", defaults.get("key_env"))
+    default_key_env = defaults.get("key_env")
+    # Local Ollama (including :cloud through a signed-in local server) needs no
+    # bearer token. Only direct calls to Ollama's cloud use its key by default.
+    if provider == "ollama" and urlsplit(endpoint).hostname == "ollama.com":
+        default_key_env = "OLLAMA_API_KEY"
+    key_env = settings.get("api_key_env", default_key_env)
     api_key = environ.get(key_env) if key_env else None
     if not api_key and "api_key_env" not in settings and defaults.get("old_key_env"):
         api_key = environ.get(defaults["old_key_env"])
@@ -380,12 +412,15 @@ def make_backend(settings: dict, *, name: str | None = None,
         raise ValueError("Model must be a valid nonempty identifier")
     if provider == "openrouter-decisions" and model is None:
         raise ValueError("OpenRouter Decisions requires an explicit model")
+    if provider == "ollama" and model is None:
+        raise ValueError("Ollama requires a model")
     price_value = settings.get("input_per_million_usd", defaults.get("price"))
     price = None if price_value is None else Pricing(
         price_value, settings.get("output_per_million_usd", 0.0),
         settings.get("price_source", defaults.get("source", "user configuration")),
         settings.get("price_checked_at", defaults.get("price_checked_at", "2026-10-02")))
-    transport = JsonTransport(endpoint, api_key=api_key, timeout=settings.get("timeout", 2.0))
+    transport = JsonTransport(endpoint, api_key=api_key,
+                              timeout=settings.get("timeout", defaults.get("timeout", 2.0)))
     info = BackendInfo(name or settings.get("name", provider), model,
                        settings.get("deployment", provider), endpoint, price,
                        settings.get("details", {}),
@@ -397,6 +432,9 @@ def make_backend(settings: dict, *, name: str | None = None,
         return OpenAIDecisionsBackend(info, transport=transport, question_types=question_types)
     if provider == "openrouter-decisions":
         return OpenRouterDecisionsBackend(info, transport=transport, question_types=question_types)
+    if provider == "ollama":
+        return OllamaDecisionBackend(info, transport=transport, question_types=question_types,
+                                     keep_alive=settings.get("keep_alive"))
     return ChoiceHTTPBackend(info, transport=transport,
                              envelope="cloudflare" if provider in {"clef", "clef-flash"} else "direct",
                              max_options=defaults.get("max_options", 255),

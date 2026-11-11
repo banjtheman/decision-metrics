@@ -2,7 +2,7 @@
 
 DecisionMetrics is a Python library for recording traces and metrics from
 decision models such as Jev, Cloudflare Clef, Microsoft Decision-1, OpenAI
-Decisions, Perplexity Decisions, and Strands Decider.
+Decisions, Ollama decision models, Perplexity Decisions, and Strands Decider.
 
 A decision model chooses from a set of options supplied by your application.
 Those options might be support queues, agent tools, or game movements. Many can
@@ -161,7 +161,7 @@ Validation checks that a Noul probability lies between 0 and 1, and that a Score
 lies within its levels, has one probability per level summing to 1, and matches
 the expected level of those probabilities within the provider's rounding.
 
-Jev, Perplexity, Clef, Clef-flash, meraGPT, Strands and the generic `systemone`
+Jev, Perplexity, Clef, Clef-flash, Ollama, meraGPT, Strands and the generic `systemone`
 transport send Noul and Score as native questions. OpenAI Decisions calls a Noul a
 `predicate`, which takes no criteria, so a Noul with criteria is refused there
 before any request; Score levels go to OpenAI with the level number as the label
@@ -174,7 +174,7 @@ answer is recorded as `unsupported_question_type` without a request.
 
 [examples/providers.toml](https://github.com/banjtheman/decision-metrics/blob/main/examples/providers.toml) contains separate entries for
 Jev, Clef, Clef-flash, Microsoft Decision-1 via OpenRouter, OpenAI Decisions,
-Perplexity, Strands local/remote, Kev, and meraGPT.
+Perplexity, Ollama local/cloud, Strands local/remote, Kev, and meraGPT.
 Download that file to `examples/providers.toml` before using the examples below,
 or clone the repository to get all sample files. They are not installed with the
 library.
@@ -186,6 +186,7 @@ library.
 | Perplexity Decisions | `provider = "perplexity"`; `PERPLEXITY_API_KEY` |
 | OpenAI Decisions | `provider = "openai-decisions"`; `OPENAI_API_KEY`; `gpt-6-luna` |
 | OpenRouter Decisions | `provider = "openrouter-decisions"`; `OPENROUTER_API_KEY`; explicit model ID |
+| Ollama Decision API | `provider = "ollama"`; local server needs no key; direct ollama.com uses `OLLAMA_API_KEY` |
 | Local Strands / Kev | `provider = "strands"` or `"kev"`; local HTTP endpoint |
 | meraGPT System One | `provider = "meragpt"`; `MERAGPT_API_KEY`; 2–10 options |
 | Another compatible server | `provider = "systemone"`; explicit endpoint and model |
@@ -211,7 +212,8 @@ The transports are tested against fixtures and a local HTTP server. Jev 1.13,
 the published Strands v19 checkpoint and Microsoft Decision-1 have each passed
 16 frozen Brotato inputs. OpenAI Decisions and Microsoft Decision-1 have also
 completed live Brotato episodes. Jev 1.13 and 1.14 answered live Noul and Score
-questions on 2026-10-27; the other providers' Noul and Score support follows their
+questions on 2026-10-27. Ollama Tev1 0.8B passed live Choice, Noul and Score checks
+on 2026-11-11; the other providers' Noul and Score support follows their
 documentation and is tested against fixtures only. These checks establish integration behavior, not optimal choices or
 comparable model rankings; other live vendor integrations remain unverified.
 
@@ -253,6 +255,53 @@ Set `OPENROUTER_API_KEY` in your environment, or configure `api_key_env` as abov
 The example applies three tool choices to local fixtures and records their
 inputs, outputs and action results. HTTP failures, including rate limits, stay
 visible in telemetry; failed requests are never automatically retried.
+
+### Ollama decision models
+
+The Ollama adapter sends Choice, Noul and Score questions to
+`POST /v1/systemone`, with `nimble` at `http://localhost:11434` as the defaults.
+It preserves the returned probabilities, confidence, model label and token
+usage. Choices accept 2–26 options and scores accept 2–10 ordered levels;
+single-option choices and single-level scores use the existing forced-result
+behavior without a model call. No Ollama SDK is required.
+
+Ollama support is unreleased; install from this checkout. Start Ollama v0.35.0
+or later, then run:
+
+```bash
+python -m pip install -e .
+ollama pull nimble
+python examples/support_routing.py --backend ollama-nimble \
+  --deadline-ms 60000 --output output/support-ollama-01.jsonl
+decision-metrics summary output/support-ollama-01.jsonl
+```
+
+Local requests need no API key. The adapter defaults to a 120-second HTTP timeout;
+the sample configuration allows 60 seconds for model loading and inference,
+and sets `keep_alive = "5m"` to keep the model
+loaded between calls. `timeout` controls the HTTP wait; `--deadline-ms` controls
+whether the example applies a completed decision. Tune both for your application.
+Omit `keep_alive` to use the server setting, or supply a duration string or a
+number of seconds. Record the actual hardware and model version when comparing
+latency. The local example records zero API charges, excluding hardware and energy.
+
+For Ollama's cloud, select `--backend ollama-cloud` to use `clef:cloud` through a
+local Ollama v0.40.5+ server signed in to ollama.com. Alternatively, set
+`OLLAMA_API_KEY` and select `--backend ollama-cloud-direct` to call
+`https://ollama.com/v1/systemone` with `clef`. Both require cloud access. A custom
+`api_key_env` selects a different credential variable. Cloud costs remain unknown
+until you configure the applicable prices; use separate local and cloud entries.
+
+For a smaller local model, run `ollama pull tev1:0.8b` and select
+`--backend ollama-tev-small`. This configuration passed nine live requests on
+2026-11-11: six Choice/Noul/Score replay checks and three support-routing decisions.
+See the [live test report](docs/ollama-smoke-20261111.md) for the model and results.
+
+This adapter uses the library's existing one-question requests. Image inputs and
+multi-question batches are not exposed. Ollama also has fixture and local HTTP
+test coverage; Nimble and cloud model calls remain unverified. See the
+[Ollama Decision guide](https://docs.ollama.com/capabilities/decision) and
+[System One API reference](https://docs.ollama.com/api/systemone).
 
 ## Freeze inputs and replay them
 

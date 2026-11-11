@@ -26,6 +26,50 @@ deployment = "openai-hosted"
 # Set OPENAI_API_KEY. Decisions uses its own input-only rate, checked 2026-10-06.
 # Regional processing premiums / long-context multipliers need a price override.
 
+[backends.ollama-nimble]
+provider = "ollama"
+model = "nimble"
+endpoint = "http://localhost:11434/v1/systemone"
+deployment = "ollama-local"
+timeout = 60
+keep_alive = "5m"
+input_per_million_usd = 0
+output_per_million_usd = 0
+price_source = "Local API charge only; hardware, energy, and compute cost excluded"
+price_checked_at = "2026-11-11"
+# Start Ollama v0.35.0+ and run `ollama pull nimble`. No API key is needed.
+# Choice supports 2–26 options. Record actual hardware in details before comparisons.
+
+[backends.ollama-tev-small]
+provider = "ollama"
+model = "tev1:0.8b"
+endpoint = "http://localhost:11434/v1/systemone"
+deployment = "ollama-local"
+timeout = 120
+keep_alive = "5m"
+input_per_million_usd = 0
+output_per_million_usd = 0
+price_source = "Local API charge only; hardware, energy, and compute cost excluded"
+price_checked_at = "2026-11-11"
+# Smaller local decision model: `ollama pull tev1:0.8b`. No API key is needed.
+
+[backends.ollama-cloud]
+provider = "ollama"
+model = "clef:cloud"
+deployment = "ollama-cloud-via-local"
+timeout = 60
+# Requires Ollama v0.40.5+ signed in to ollama.com, with cloud access.
+# Cloud cost is unknown unless you configure the applicable rates; do not copy local zeros.
+
+[backends.ollama-cloud-direct]
+provider = "ollama"
+model = "clef"
+endpoint = "https://ollama.com/v1/systemone"
+deployment = "ollama-cloud-direct"
+timeout = 60
+# Set OLLAMA_API_KEY; api_key_env can select a different environment variable.
+# Configure applicable prices to estimate cloud API costs.
+
 [backends.strands-local]
 provider = "strands"
 endpoint = "http://127.0.0.1:8000/v1/systemone"
